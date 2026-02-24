@@ -1,4 +1,4 @@
-import { Component, StrictMode } from "react";
+import { Component, Suspense, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
@@ -34,10 +34,21 @@ class AppErrorBoundary extends Component<
   }
 }
 
-createRoot(document.getElementById("root")!).render(
+const rootEl = document.getElementById("root");
+if (!rootEl) throw new Error("Elemento #root não encontrado.");
+
+createRoot(rootEl).render(
   <StrictMode>
     <AppErrorBoundary>
-      <RouterProvider router={router} />
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
+            Carregando...
+          </div>
+        }
+      >
+        <RouterProvider router={router} />
+      </Suspense>
       <Toaster richColors position="top-center" />
     </AppErrorBoundary>
   </StrictMode>

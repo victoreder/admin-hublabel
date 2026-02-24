@@ -48,29 +48,34 @@ function SalesGuard() {
   return <SalesAdmin />;
 }
 
-export const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <Outlet />,
-    errorElement: <RouteErrorFallback />,
-    children: [
-      { path: "login", element: <Login /> },
-      { path: "changelog", element: <ChangelogPublic /> },
-      { path: "roadmap", element: <RoadmapPublic /> },
-      { path: "inserir-anon-key", element: <InserirAnonKey /> },
-      {
-        path: "admin",
-        element: <ProtectedWrapper />,
-        children: [
-          { index: true, element: <Navigate to="/admin/clientes" replace /> },
-          { path: "clientes", element: <ClientAdmin /> },
-          { path: "emails", element: <EmailAdmin /> },
-          { path: "atualizacoes", element: <UpdatesAdmin /> },
-          { path: "vendas", element: <SalesGuard /> },
-        ],
-      },
-      { index: true, element: <Navigate to="/admin/clientes" replace /> },
-      { path: "*", element: <Navigate to="/admin/clientes" replace /> },
-    ],
-  },
-]);
+const basename = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+export const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <Outlet />,
+      errorElement: <RouteErrorFallback />,
+      children: [
+        { path: "login", element: <Login /> },
+        { path: "changelog", element: <ChangelogPublic /> },
+        { path: "roadmap", element: <RoadmapPublic /> },
+        { path: "inserir-anon-key", element: <InserirAnonKey /> },
+        {
+          path: "admin",
+          element: <ProtectedWrapper />,
+          children: [
+            { index: true, element: <Navigate to="/admin/clientes" replace /> },
+            { path: "clientes", element: <ClientAdmin /> },
+            { path: "emails", element: <EmailAdmin /> },
+            { path: "atualizacoes", element: <UpdatesAdmin /> },
+            { path: "vendas", element: <SalesGuard /> },
+          ],
+        },
+        { index: true, element: <Navigate to="/admin/clientes" replace /> },
+        { path: "*", element: <Navigate to="/admin/clientes" replace /> },
+      ],
+    },
+  ],
+  basename ? { basename } : undefined
+);
