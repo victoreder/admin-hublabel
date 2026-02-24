@@ -8,13 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -66,28 +60,28 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="w-full max-w-[420px] min-w-0 border-border/50 bg-card/80 backdrop-blur shadow-xl">
-        <CardHeader className="text-center space-y-2">
+        <CardHeader className="text-center">
           <img
             src="https://xnfmuxuvnkhwoymxgmbw.supabase.co/storage/v1/object/public/versoes/LOGO.png"
             alt="HubLabel"
             className="h-12 w-auto object-contain mx-auto"
           />
-          <CardTitle className="text-2xl font-bold text-primary">
-            HubLabel Admin
-          </CardTitle>
-          <CardDescription>
-            Entre com seu email e senha para acessar o painel
-          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="space-y-4"
+            autoComplete="on"
+            method="post"
+            action="#"
+          >
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
                 placeholder="admin@exemplo.com"
-                autoComplete="email"
+                autoComplete="username"
                 {...register("email")}
                 className={errors.email ? "border-destructive" : ""}
               />

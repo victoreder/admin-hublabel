@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Login } from "@/pages/Login";
@@ -8,6 +8,7 @@ import { UpdatesAdmin } from "@/pages/UpdatesAdmin";
 import { ChangelogPublic } from "@/pages/ChangelogPublic";
 import { SalesAdmin } from "@/pages/SalesAdmin";
 import { canAccessSales } from "@/lib/salesAccess";
+import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 
 function ProtectedWrapper() {
   const { isAuthenticated, loading } = useAuth();
@@ -47,24 +48,25 @@ function SalesGuard() {
 
 export const router = createBrowserRouter([
   {
-    path: "/login",
-    element: <Login />,
-  },
-  {
-    path: "/changelog",
-    element: <ChangelogPublic />,
-  },
-  {
-    path: "/admin",
-    element: <ProtectedWrapper />,
+    path: "/",
+    element: <Outlet />,
+    errorElement: <RouteErrorFallback />,
     children: [
+      { path: "login", element: <Login /> },
+      { path: "changelog", element: <ChangelogPublic /> },
+      {
+        path: "admin",
+        element: <ProtectedWrapper />,
+        children: [
+          { index: true, element: <Navigate to="/admin/clientes" replace /> },
+          { path: "clientes", element: <ClientAdmin /> },
+          { path: "emails", element: <EmailAdmin /> },
+          { path: "atualizacoes", element: <UpdatesAdmin /> },
+          { path: "vendas", element: <SalesGuard /> },
+        ],
+      },
       { index: true, element: <Navigate to="/admin/clientes" replace /> },
-      { path: "clientes", element: <ClientAdmin /> },
-      { path: "emails", element: <EmailAdmin /> },
-      { path: "atualizacoes", element: <UpdatesAdmin /> },
-      { path: "vendas", element: <SalesGuard /> },
+      { path: "*", element: <Navigate to="/admin/clientes" replace /> },
     ],
   },
-  { path: "/", element: <Navigate to="/admin/clientes" replace /> },
-  { path: "*", element: <Navigate to="/admin/clientes" replace /> },
 ]);
