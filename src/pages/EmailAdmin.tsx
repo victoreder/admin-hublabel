@@ -22,24 +22,34 @@ const VARIAVEIS = [
   { key: "versao", label: "Versão" },
 ] as const;
 
+const VARIAVEL_LINK_ANON_KEY = { key: "linkInserirAnonKey", label: "Link para inserir Anon Key" } as const;
+
+function getLinkInserirAnonKey(anonKeyToken: string | undefined): string {
+  if (!anonKeyToken) return "";
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+  return `${base}/inserir-anon-key?id=${encodeURIComponent(anonKeyToken)}`;
+}
+
 function replaceVars(
-  client: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao">,
+  client: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao" | "anon_key_token">,
   text: string
 ): string {
   return text
     .replace(/\{\{nomeSoftware\}\}/g, client.nomeSoftware ?? "")
     .replace(/\{\{dominio\}\}/g, client.dominio ?? "")
     .replace(/\{\{email\}\}/g, client.email ?? "")
-    .replace(/\{\{versao\}\}/g, client.versao ?? "");
+    .replace(/\{\{versao\}\}/g, client.versao ?? "")
+    .replace(/\{\{linkInserirAnonKey\}\}/g, getLinkInserirAnonKey(client.anon_key_token));
 }
 
-type FilterMode = "all" | "individual" | "version" | "missingAnonKey";
+type FilterMode = "all" | "individual" | "version" | "missingAnonKey" | "nuncaInstalado";
 
 export function EmailAdmin() {
   const [clients, setClients] = useState<UsuarioSAASAgente[]>([]);
   const [modelos, setModelos] = useState<ModeloEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [excluirNuncaInstalados, setExcluirNuncaInstalados] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [selectedModeloId, setSelectedModeloId] = useState<string>("");
@@ -58,7 +68,7 @@ export function EmailAdmin() {
         const [clientsRes, modelosRes] = await Promise.all([
           supabase
             .from("usuarios_SAAS_Agentes")
-            .select("id, nomeSoftware, email, dominio, versao, supabase_anon_key, supabase_apikey")
+            .select("id, nomeSoftware, email, dominio, versao, supabase_anon_key, supabase_apikey, anon_key_token")
             .order("nomeSoftware"),
           supabase.from("modelos_email").select("*").order("created_at", { ascending: false }),
         ]);
@@ -101,13 +111,27 @@ export function EmailAdmin() {
       if (!selectedVersion) return [];
       return clients.filter((c) => (c.versao ?? "").trim() === selectedVersion);
     }
-    if (filterMode === "missingAnonKey") {
+    // Tabela usuarios_SAAS_Agentes: coluna dominio vazia = nunca instalado
+    if (filterMode === "nuncaInstalado") {
       return clients.filter(
-        (c) => !(c.supabase_anon_key?.trim() || c.supabase_apikey?.trim())
+        (c) => c.dominio == null || String(c.dominio).trim() === ""
       );
     }
+    // Tabela usuarios_SAAS_Agentes: coluna supabase_anon_key vazia = faltando anon key
+    if (filterMode === "missingAnonKey") {
+      const semAnon = clients.filter(
+        (c) => c.supabase_anon_key == null || String(c.supabase_anon_key).trim() === ""
+      );
+      // Excluir nunca instalados = manter só quem já tem domínio (dominio não vazio)
+      if (excluirNuncaInstalados) {
+        return semAnon.filter(
+          (c) => c.dominio != null && String(c.dominio).trim() !== ""
+        );
+      }
+      return semAnon;
+    }
     return [];
-  }, [clients, filterMode, selectedClientId, selectedVersion]);
+  }, [clients, filterMode, selectedClientId, selectedVersion, excluirNuncaInstalados]);
 
   const sendEmail = async (
     destinatarios: string[],
@@ -147,7 +171,7 @@ export function EmailAdmin() {
     }
     setIsSubmitting(true);
     try {
-      const hasVars = /\{\{(?:nomeSoftware|dominio|email|versao)\}\}/.test(assunto + corpo);
+      const hasVars = /\{\{(?:nomeSoftware|dominio|email|versao|linkInserirAnonKey)\}\}/.test(assunto + corpo);
       if (hasVars) {
         for (const c of recipients) {
           await sendEmail(
@@ -188,6 +212,7 @@ export function EmailAdmin() {
         dominio: "exemplo.com",
         email,
         versao: "1.0",
+        anon_key_token: undefined,
       };
       await sendEmail(
         [email],
@@ -242,7 +267,7 @@ export function EmailAdmin() {
             <div className="space-y-2">
               <Label>Destinatários</Label>
               <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 items-stretch sm:items-end">
-                <div className="w-full sm:min-w-[200px]">
+                <div className="w-fit">
                   <Select
                     value={filterMode}
                     onValueChange={(v) => {
@@ -252,28 +277,40 @@ export function EmailAdmin() {
                     }}
                     disabled={loading}
                   >
-                    <SelectTrigger className="mt-1">
+                    <SelectTrigger className="mt-1 w-fit min-w-[180px]">
                       <SelectValue placeholder="Tipo de filtro..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="w-fit">
                       <SelectItem value="all">Todos os clientes</SelectItem>
                       <SelectItem value="individual">Um cliente (individual)</SelectItem>
                       <SelectItem value="version">Por versão</SelectItem>
                       <SelectItem value="missingAnonKey">Sem anon key</SelectItem>
+                      <SelectItem value="nuncaInstalado">Nunca instalado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                {filterMode === "missingAnonKey" && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={excluirNuncaInstalados}
+                      onChange={(e) => setExcluirNuncaInstalados(e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    <span className="text-sm text-muted-foreground">Excluir nunca instalados</span>
+                  </label>
+                )}
                 {filterMode === "individual" && (
-                  <div className="w-full sm:min-w-[220px]">
+                  <div className="w-fit">
                     <Select
                       value={selectedClientId}
                       onValueChange={setSelectedClientId}
                       disabled={loading}
                     >
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1 w-fit min-w-[200px]">
                         <SelectValue placeholder="Selecione o cliente..." />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-w-[90vw]">
                         {clients.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.nomeSoftware} ({c.email})
@@ -284,16 +321,16 @@ export function EmailAdmin() {
                   </div>
                 )}
                 {filterMode === "version" && (
-                  <div className="w-full sm:min-w-[180px]">
+                  <div className="w-fit">
                     <Select
                       value={selectedVersion}
                       onValueChange={setSelectedVersion}
                       disabled={loading}
                     >
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1 w-fit min-w-[160px]">
                         <SelectValue placeholder="Selecione a versão..." />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="w-fit">
                         {versions.map((v) => (
                           <SelectItem key={v} value={v}>
                             {v}
@@ -348,6 +385,9 @@ export function EmailAdmin() {
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Variáveis: {VARIAVEIS.map((v) => "{{" + v.key + "}}").join(", ")}
+                {filterMode === "missingAnonKey" && (
+                  <span>, {"{{" + VARIAVEL_LINK_ANON_KEY.key + "}}"}</span>
+                )}
               </p>
             </div>
 
@@ -355,7 +395,7 @@ export function EmailAdmin() {
             <div className="rounded-lg border border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
               <Label className="text-muted-foreground">Preview (HTML com variáveis)</Label>
               {(() => {
-                const previewClient: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao"> =
+                const previewClient: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao" | "anon_key_token"> =
                   recipients.length > 0
                     ? recipients[0]
                     : {
@@ -363,6 +403,7 @@ export function EmailAdmin() {
                         dominio: "exemplo.com",
                         email: "email@exemplo.com",
                         versao: "1.0.0",
+                        anon_key_token: undefined,
                       };
                 const assuntoPreview = replaceVars(previewClient, assunto);
                 const corpoPreview = replaceVars(previewClient, corpo);

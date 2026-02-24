@@ -97,6 +97,7 @@ export function ClientTable({
     <div className="space-y-3 md:hidden">
       {clients.map((client) => {
         const isLatest = latestVersion && client.versao === latestVersion;
+        // usuarios_SAAS_Agentes: supabase_anon_key vazia = faltando anon key; dominio vazia = nunca instalado
         const missingAnonKey = client.supabase_anon_key == null || String(client.supabase_anon_key).trim() === "";
         const nuncaInstalado = client.dominio == null || String(client.dominio).trim() === "";
         return (
@@ -194,6 +195,7 @@ export function ClientTable({
       <TableBody>
         {clients.map((client) => {
           const isLatest = latestVersion && client.versao === latestVersion;
+          // usuarios_SAAS_Agentes: supabase_anon_key vazia = faltando anon key; dominio vazia = nunca instalado
           const missingAnonKey = client.supabase_anon_key == null || String(client.supabase_anon_key).trim() === "";
           const nuncaInstalado = client.dominio == null || String(client.dominio).trim() === "";
           return (

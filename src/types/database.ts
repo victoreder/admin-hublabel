@@ -15,6 +15,7 @@ export interface UsuarioSAASAgente {
   supabase_url?: string;
   supabase_apikey?: string;
   supabase_anon_key?: string;
+  anon_key_token?: string;
   senha?: string;
   n8nUrl?: string;
   [key: string]: unknown;
@@ -48,8 +49,29 @@ export interface Venda {
 export interface VersaoSAASAgente {
   id: string;
   nomeVersao: string;
+  titulo?: string;
   linkVersao?: string;
+  url_imagem?: string;
   correcoes?: string;
   implementacoes?: string;
+  created_at?: string;
+}
+
+export type RoadmapStatus = "sugestao" | "planejado" | "em_andamento" | "concluido";
+
+export interface RoadmapItem {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  status: RoadmapStatus;
+  votos_count: number;
+  dominio_sugestao?: string;
+  created_at?: string;
+}
+
+export interface RoadmapVoto {
+  id: string;
+  item_id: string;
+  dominio: string;
   created_at?: string;
 }

@@ -11,7 +11,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Copy } from "lucide-react";
 import type { UsuarioSAASAgente } from "@/types/database";
+
+function getLinkInserirAnonKey(token: string | undefined): string {
+  if (!token) return "";
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+  return `${base}/inserir-anon-key?id=${encodeURIComponent(token)}`;
+}
 
 interface AnonKeyDialogProps {
   client: UsuarioSAASAgente | null;
@@ -66,6 +73,36 @@ export function AnonKeyDialog({ client, open, onClose, onSaved }: AnonKeyDialogP
         <p className="text-sm text-muted-foreground">
           Cliente: <strong className="text-foreground">{client.nomeSoftware || client.email}</strong>
         </p>
+        {client.anon_key_token && (
+          <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+            <Label className="text-xs text-muted-foreground">Link para o cliente inserir a Anon Key</Label>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={getLinkInserirAnonKey(client.anon_key_token)}
+                className="font-mono text-xs flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => {
+                  const link = getLinkInserirAnonKey(client.anon_key_token);
+                  if (link && navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(link);
+                    toast.success("Link copiado!");
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Envie este link por email ao cliente para ele colar a Anon Key.
+            </p>
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="anon-key">Supabase Anon Key</Label>
           <Input

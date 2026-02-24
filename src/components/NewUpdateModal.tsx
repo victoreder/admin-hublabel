@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Upload, X } from "lucide-react";
+import { Upload, X, ImageIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,9 @@ const BUCKET = "versoes";
 
 const schema = z.object({
   nomeVersao: z.string().min(1, "Versão obrigatória"),
+  titulo: z.string().optional(),
   linkVersao: z.string().optional(),
+  url_imagem: z.string().optional(),
   correcoes: z.string().optional(),
   implementacoes: z.string().optional(),
 });
@@ -35,8 +37,11 @@ interface NewUpdateModalProps {
 
 export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps) {
   const [uploading, setUploading] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
   const [uploadUrl, setUploadUrl] = useState<string>("");
+  const [imageUrl, setImageUrl] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const {
     register,
     handleSubmit,
@@ -74,17 +79,47 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
     setValue("linkVersao", "");
   };
 
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImg(true);
+    try {
+      const path = `changelog/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+      const { data, error } = await supabase.storage.from(BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(data.path);
+      setImageUrl(urlData.publicUrl);
+      setValue("url_imagem", urlData.publicUrl);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro no upload da imagem.");
+    } finally {
+      setUploadingImg(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeImage = () => {
+    setImageUrl("");
+    setValue("url_imagem", "");
+  };
+
   const onSubmit = async (data: FormData) => {
     try {
       const { error } = await supabase.from("versoes_SAAS_Agentes").insert({
         nomeVersao: data.nomeVersao,
+        titulo: data.titulo || null,
         linkVersao: data.linkVersao || uploadUrl || null,
+        url_imagem: data.url_imagem || imageUrl || null,
         correcoes: data.correcoes || null,
         implementacoes: data.implementacoes || null,
       });
       if (error) throw error;
       reset();
       setUploadUrl("");
+      setImageUrl("");
       onSuccess();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao registrar atualização";
@@ -147,12 +182,68 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
             <Input id="linkVersao" placeholder="https://..." {...register("linkVersao")} />
           </div>
           <div>
+            <Label htmlFor="titulo">Título da entrada (opcional)</Label>
+            <Input
+              id="titulo"
+              placeholder="Ex.: Colar itens na ordem em que foram copiados"
+              {...register("titulo")}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Título principal exibido no changelog ao lado da versão.
+            </p>
+          </div>
+          <div>
+            <Label>Imagem do changelog (opcional)</Label>
+            <div className="flex flex-col gap-2 mt-1">
+              <div className="flex gap-2 flex-wrap">
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageChange}
+                  disabled={uploadingImg}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={uploadingImg}
+                >
+                  <ImageIcon className="h-4 w-4 mr-2" />
+                  {uploadingImg ? "Enviando..." : "Enviar imagem"}
+                </Button>
+                {imageUrl && (
+                  <Button type="button" variant="ghost" size="sm" onClick={removeImage}>
+                    <X className="h-4 w-4 mr-1" />
+                    Remover
+                  </Button>
+                )}
+              </div>
+              <Input
+                placeholder="Ou cole a URL da imagem"
+                {...register("url_imagem")}
+                className={imageUrl ? "opacity-60" : ""}
+                onChange={(e) => {
+                  register("url_imagem").onChange(e);
+                  if (!e.target.value) setImageUrl("");
+                }}
+              />
+              {imageUrl && (
+                <p className="text-xs text-muted-foreground truncate" title={imageUrl}>
+                  {imageUrl}
+                </p>
+              )}
+            </div>
+          </div>
+          <div>
             <Label htmlFor="correcoes">Correções</Label>
             <textarea
               id="correcoes"
               rows={3}
               className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Lista de correções..."
+              placeholder="Uma correção por linha (cada linha vira um item no changelog)"
               {...register("correcoes")}
             />
           </div>
@@ -162,7 +253,7 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
               id="implementacoes"
               rows={3}
               className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Lista de novas funcionalidades..."
+              placeholder="Uma novidade por linha (cada linha vira um item no changelog)"
               {...register("implementacoes")}
             />
           </div>

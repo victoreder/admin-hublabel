@@ -6,6 +6,8 @@ import { ClientAdmin } from "@/pages/ClientAdmin";
 import { EmailAdmin } from "@/pages/EmailAdmin";
 import { UpdatesAdmin } from "@/pages/UpdatesAdmin";
 import { ChangelogPublic } from "@/pages/ChangelogPublic";
+import { RoadmapPublic } from "@/pages/RoadmapPublic";
+import { InserirAnonKey } from "@/pages/InserirAnonKey";
 import { SalesAdmin } from "@/pages/SalesAdmin";
 import { canAccessSales } from "@/lib/salesAccess";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
@@ -54,6 +56,8 @@ export const router = createBrowserRouter([
     children: [
       { path: "login", element: <Login /> },
       { path: "changelog", element: <ChangelogPublic /> },
+      { path: "roadmap", element: <RoadmapPublic /> },
+      { path: "inserir-anon-key", element: <InserirAnonKey /> },
       {
         path: "admin",
         element: <ProtectedWrapper />,
