@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from("usuarios_SAAS_Agentes")
-      .select("nomeSoftware, dominio")
+      .select("nomeSoftware, dominio, supabase_url")
       .eq("anon_key_token", token)
       .maybeSingle();
     if (error) {
@@ -24,9 +24,11 @@ export default async function handler(req, res) {
     if (!data) {
       return res.status(404).json({ error: "Link inválido ou expirado." });
     }
-    const nome = data.nomeSoftware ?? data.nome_software ?? data.nomesoftware ?? "";
-    const dominio = data.dominio ?? "";
-    res.status(200).json({ nomeSoftware: nome, dominio });
+    const row = data;
+    const nome = row.nomeSoftware ?? row.nome_software ?? row.nomesoftware ?? "";
+    const dominio = row.dominio ?? "";
+    const supabaseUrl = row.supabase_url ?? "";
+    res.status(200).json({ nomeSoftware: nome, dominio, supabaseUrl });
   } catch (err) {
     console.error("Erro ao carregar info anon key.");
     res.status(500).json({ error: "Erro ao carregar." });
