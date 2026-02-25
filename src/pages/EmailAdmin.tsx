@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { Send, Save, Mail } from "lucide-react";
+import { Send, Save, Mail, Sparkles, Users, FileText, ChevronRight, Calendar } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -45,7 +45,14 @@ function replaceVars(
 
 type FilterMode = "all" | "individual" | "version" | "missingAnonKey" | "nuncaInstalado";
 
+const STEPS = [
+  { id: 1, title: "Destinatários e conteúdo", icon: Users },
+  { id: 2, title: "Revisar email", icon: FileText },
+  { id: 3, title: "Enviar", icon: Send },
+] as const;
+
 export function EmailAdmin() {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [clients, setClients] = useState<UsuarioSAASAgente[]>([]);
   const [modelos, setModelos] = useState<ModeloEmail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +68,11 @@ export function EmailAdmin() {
   const [isSavingModelo, setIsSavingModelo] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [instrucoesIA, setInstrucoesIA] = useState("");
+  const [isGeneratingIA, setIsGeneratingIA] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [showBodyEditor, setShowBodyEditor] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -112,18 +124,15 @@ export function EmailAdmin() {
       if (!selectedVersion) return [];
       return clients.filter((c) => (c.versao ?? "").trim() === selectedVersion);
     }
-    // Tabela usuarios_SAAS_Agentes: coluna dominio vazia = nunca instalado
     if (filterMode === "nuncaInstalado") {
       return clients.filter(
         (c) => c.dominio == null || String(c.dominio).trim() === ""
       );
     }
-    // Tabela usuarios_SAAS_Agentes: coluna supabase_anon_key vazia = faltando anon key
     if (filterMode === "missingAnonKey") {
       const semAnon = clients.filter(
         (c) => c.supabase_anon_key == null || String(c.supabase_anon_key).trim() === ""
       );
-      // Excluir nunca instalados = manter só quem já tem domínio (dominio não vazio)
       if (excluirNuncaInstalados) {
         return semAnon.filter(
           (c) => c.dominio != null && String(c.dominio).trim() !== ""
@@ -133,6 +142,9 @@ export function EmailAdmin() {
     }
     return [];
   }, [clients, filterMode, selectedClientId, selectedVersion, excluirNuncaInstalados]);
+
+  const canGoToStep2 = recipients.length > 0 && corpo.trim().length > 0;
+  const canGoToStep3 = assunto.trim().length > 0;
 
   const sendEmail = async (
     destinatarios: string[],
@@ -156,7 +168,7 @@ export function EmailAdmin() {
     if (!res.ok) throw new Error("Falha ao enviar");
   };
 
-  const handleSend = async (e: React.FormEvent) => {
+  const handleSendNow = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assunto.trim()) {
       toast.error("Informe o assunto.");
@@ -233,18 +245,32 @@ export function EmailAdmin() {
       toast.error("Preencha assunto e corpo para salvar modelo.");
       return;
     }
-    const nome = modeloNome.trim() || assunto.slice(0, 50);
     setIsSavingModelo(true);
     try {
-      const { data, error } = await supabase
-        .from("modelos_email")
-        .insert({ nome, assunto, corpo })
-        .select()
-        .single();
-      if (error) throw error;
-      setModelos((prev) => [data as ModeloEmail, ...prev]);
-      setModeloNome("");
-      toast.success("Modelo salvo!");
+      if (selectedModeloId) {
+        const updates: { assunto: string; corpo: string; nome?: string } = { assunto, corpo };
+        if (modeloNome.trim()) updates.nome = modeloNome.trim();
+        const { data, error } = await supabase
+          .from("modelos_email")
+          .update(updates)
+          .eq("id", selectedModeloId)
+          .select()
+          .single();
+        if (error) throw error;
+        setModelos((prev) => prev.map((m) => (m.id === selectedModeloId ? (data as ModeloEmail) : m)));
+        toast.success("Modelo atualizado!");
+      } else {
+        const nome = modeloNome.trim() || assunto.slice(0, 50);
+        const { data, error } = await supabase
+          .from("modelos_email")
+          .insert({ nome, assunto, corpo })
+          .select()
+          .single();
+        if (error) throw error;
+        setModelos((prev) => [data as ModeloEmail, ...prev]);
+        setModeloNome("");
+        toast.success("Modelo salvo!");
+      }
     } catch {
       toast.error("Erro ao salvar modelo.");
     } finally {
@@ -252,234 +278,553 @@ export function EmailAdmin() {
     }
   };
 
+  const handleGerarEmailIA = async () => {
+    const text = instrucoesIA.trim();
+    if (!text) {
+      toast.error("Descreva o que deseja no email.");
+      return;
+    }
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) {
+      toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
+      return;
+    }
+    const modelo = selectedModeloId ? modelos.find((m) => m.id === selectedModeloId) : null;
+    const body: { instrucoes: string; modeloAtual?: { assunto?: string; corpo?: string } } = {
+      instrucoes: text,
+    };
+    if (modelo && (modelo.assunto || modelo.corpo)) {
+      body.modeloAtual = { assunto: modelo.assunto ?? "", corpo: modelo.corpo ?? "" };
+    }
+    setIsGeneratingIA(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${backendUrl}/api/gerar-email-ia`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || "Falha ao gerar email com IA.");
+        return;
+      }
+      if (data.html) {
+        setCorpo(data.html);
+        toast.success(
+          modelo
+            ? "Modelo editado pela IA. Avance para revisar e salve para atualizar o modelo."
+            : "Email gerado. Avance para revisar."
+        );
+      } else {
+        toast.error("Resposta inválida do backend.");
+      }
+    } catch {
+      toast.error("Erro ao gerar email com IA. Verifique o Backend e OPENAI_API_KEY.");
+    } finally {
+      setIsGeneratingIA(false);
+    }
+  };
+
+  const handleAgendar = async () => {
+    if (!scheduledAt.trim()) {
+      toast.error("Selecione data e hora para o envio.");
+      return;
+    }
+    if (!assunto.trim() || !corpo.trim() || recipients.length === 0) {
+      toast.error("Complete destinatários, assunto e corpo.");
+      return;
+    }
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) {
+      toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
+      return;
+    }
+    const dt = new Date(scheduledAt);
+    if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) {
+      toast.error("Escolha uma data e hora futuras.");
+      return;
+    }
+    setIsScheduling(true);
+    try {
+      const destinatariosPayload = recipients.map((c) => ({
+        email: c.email,
+        nomeSoftware: c.nomeSoftware ?? "",
+        dominio: c.dominio ?? "",
+        versao: c.versao ?? "",
+        anon_key_token: c.anon_key_token ?? null,
+      }));
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${backendUrl}/api/agendar-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+        },
+        body: JSON.stringify({
+          scheduledAt: dt.toISOString(),
+          destinatarios: destinatariosPayload,
+          assunto,
+          corpo,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || "Falha ao agendar.");
+        return;
+      }
+      const formatted = dt.toLocaleString("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+      });
+      toast.success(`Agendado para ${formatted}. O email será enviado automaticamente.`);
+      setScheduledAt("");
+    } catch {
+      toast.error("Erro ao agendar. Verifique o backend.");
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
+  const previewClient: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao" | "anon_key_token"> =
+    recipients.length > 0
+      ? recipients[0]
+      : {
+          nomeSoftware: "Nome do Cliente",
+          dominio: "exemplo.com",
+          email: "email@exemplo.com",
+          versao: "1.0.0",
+          anon_key_token: undefined,
+        };
+  const corpoPreview = replaceVars(previewClient, corpo);
+  const assuntoPreview = replaceVars(previewClient, assunto);
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Emails</h1>
+    <div className="min-h-screen bg-[hsl(var(--background))]">
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+        <h1 className="font-semibold tracking-tight text-[hsl(var(--foreground))] text-2xl sm:text-3xl">
+          Emails
+        </h1>
+        <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+          Escolha destinatários, use um modelo ou gere com IA e envie em poucos passos.
+        </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Compor e enviar</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Escreva diretamente, use um modelo salvo ou salve como modelo para reutilizar depois.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSend} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Destinatários</Label>
-              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 items-stretch sm:items-end">
-                <div className="w-fit">
-                  <Select
-                    value={filterMode}
-                    onValueChange={(v) => {
-                      setFilterMode(v as FilterMode);
-                      setSelectedClientId("");
-                      setSelectedVersion("");
-                    }}
-                    disabled={loading}
-                  >
-                    <SelectTrigger className="mt-1 w-fit min-w-[180px]">
-                      <SelectValue placeholder="Tipo de filtro..." />
-                    </SelectTrigger>
-                    <SelectContent className="w-fit">
-                      <SelectItem value="all">Todos os clientes</SelectItem>
-                      <SelectItem value="individual">Um cliente (individual)</SelectItem>
-                      <SelectItem value="version">Por versão</SelectItem>
-                      <SelectItem value="missingAnonKey">Sem anon key</SelectItem>
-                      <SelectItem value="nuncaInstalado">Nunca instalado</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {filterMode === "missingAnonKey" && (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={excluirNuncaInstalados}
-                      onChange={(e) => setExcluirNuncaInstalados(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    <span className="text-sm text-muted-foreground">Excluir nunca instalados</span>
-                  </label>
-                )}
-                {filterMode === "individual" && (
-                  <div className="w-fit">
-                    <Select
-                      value={selectedClientId}
-                      onValueChange={setSelectedClientId}
-                      disabled={loading}
-                    >
-                      <SelectTrigger className="mt-1 w-fit min-w-[200px]">
-                        <SelectValue placeholder="Selecione o cliente..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-w-[90vw]">
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.nomeSoftware} ({c.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {filterMode === "version" && (
-                  <div className="w-fit">
-                    <Select
-                      value={selectedVersion}
-                      onValueChange={setSelectedVersion}
-                      disabled={loading}
-                    >
-                      <SelectTrigger className="mt-1 w-fit min-w-[160px]">
-                        <SelectValue placeholder="Selecione a versão..." />
-                      </SelectTrigger>
-                      <SelectContent className="w-fit">
-                        {versions.map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {recipients.length} destinatário(s) selecionado(s)
-              </p>
-            </div>
+        {/* Stepper */}
+        <nav className="mt-8 flex items-center gap-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-sm">
+          {STEPS.map((s, i) => {
+            const isActive = step === s.id;
+            const isPast = step > s.id;
+            const Icon = s.icon;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setStep(s.id as 1 | 2 | 3)}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-medium transition-colors sm:px-4 ${
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow"
+                    : isPast
+                      ? "text-primary hover:bg-primary/10"
+                      : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">{s.title}</span>
+                <span className="sm:hidden">{s.id}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-            <div>
-              <Label>Modelo salvo (opcional)</Label>
-              <Select value={selectedModeloId} onValueChange={setSelectedModeloId}>
-                <SelectTrigger className="w-full sm:max-w-sm mt-1">
-                  <SelectValue placeholder="Nenhum" />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelos.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="assunto">Assunto</Label>
-              <Input
-                id="assunto"
-                value={assunto}
-                onChange={(e) => setAssunto(e.target.value)}
-                placeholder="Assunto (pode usar {{nomeSoftware}}, {{email}}, etc.)"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="corpo">Corpo</Label>
-              <textarea
-                id="corpo"
-                rows={8}
-                value={corpo}
-                onChange={(e) => setCorpo(e.target.value)}
-                placeholder="Conteúdo do email (texto ou HTML). Use {{nomeSoftware}}, {{dominio}}, {{email}}, {{versao}} para personalizar."
-                className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring mt-1"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Variáveis: {VARIAVEIS.map((v) => "{{" + v.key + "}}").join(", ")}
-                {filterMode === "missingAnonKey" && (
-                  <span>, {"{{" + VARIAVEL_LINK_ANON_KEY.key + "}}"}</span>
-                )}
-              </p>
-            </div>
-
-            {/* Preview com variáveis substituídas */}
-            <div className="rounded-lg border border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
-              <Label className="text-muted-foreground">Preview (HTML com variáveis)</Label>
-              {(() => {
-                const previewClient: Pick<UsuarioSAASAgente, "nomeSoftware" | "dominio" | "email" | "versao" | "anon_key_token"> =
-                  recipients.length > 0
-                    ? recipients[0]
-                    : {
-                        nomeSoftware: "Nome do Cliente",
-                        dominio: "exemplo.com",
-                        email: "email@exemplo.com",
-                        versao: "1.0.0",
-                        anon_key_token: undefined,
-                      };
-                const assuntoPreview = replaceVars(previewClient, assunto);
-                const corpoPreview = replaceVars(previewClient, corpo);
-                return (
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-xs text-muted-foreground">Assunto: </span>
-                      <span className="text-sm font-medium">{assuntoPreview || "(vazio)"}</span>
-                    </div>
-                    <div className="border rounded-md bg-background overflow-auto max-h-[320px] min-h-[120px]">
-                      <div
-                        className="p-3 text-sm prose prose-sm max-w-none [&_img]:max-w-full"
-                        dangerouslySetInnerHTML={{
-                          __html: corpoPreview
-                            ? corpoPreview.includes("<")
-                              ? corpoPreview
-                              : "<pre class='whitespace-pre-wrap m-0 font-sans'>" + corpoPreview.replace(/</g, "&lt;").replace(/>/g, "&gt;") + "</pre>"
-                            : "<span class='text-muted-foreground'>(vazio)</span>",
+        <Card className="mt-6 overflow-hidden border-[hsl(var(--border))] shadow-sm">
+          <CardContent className="p-0">
+            {/* Etapa 1: Destinatários e conteúdo */}
+            {step === 1 && (
+              <div className="space-y-8 p-6 sm:p-8">
+                <div>
+                  <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
+                    Destinatários
+                  </h2>
+                  <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+                    Quem receberá o email
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <div className="w-full min-w-0 sm:w-auto">
+                      <Select
+                        value={filterMode}
+                        onValueChange={(v) => {
+                          setFilterMode(v as FilterMode);
+                          setSelectedClientId("");
+                          setSelectedVersion("");
                         }}
-                      />
+                        disabled={loading}
+                      >
+                        <SelectTrigger className="w-full sm:w-[200px]">
+                          <SelectValue placeholder="Filtro..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos os clientes</SelectItem>
+                          <SelectItem value="individual">Um cliente</SelectItem>
+                          <SelectItem value="version">Por versão</SelectItem>
+                          <SelectItem value="missingAnonKey">Sem anon key</SelectItem>
+                          <SelectItem value="nuncaInstalado">Nunca instalado</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    {recipients.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Preview usando: {previewClient.nomeSoftware} ({previewClient.email})
-                      </p>
+                    {filterMode === "missingAnonKey" && (
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]">
+                        <input
+                          type="checkbox"
+                          checked={excluirNuncaInstalados}
+                          onChange={(e) => setExcluirNuncaInstalados(e.target.checked)}
+                          className="rounded border-input"
+                        />
+                        Excluir nunca instalados
+                      </label>
+                    )}
+                    {filterMode === "individual" && (
+                      <Select
+                        value={selectedClientId}
+                        onValueChange={setSelectedClientId}
+                        disabled={loading}
+                      >
+                        <SelectTrigger className="w-full sm:w-[240px]">
+                          <SelectValue placeholder="Cliente..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.nomeSoftware} ({c.email})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {filterMode === "version" && (
+                      <Select
+                        value={selectedVersion}
+                        onValueChange={setSelectedVersion}
+                        disabled={loading}
+                      >
+                        <SelectTrigger className="w-full sm:w-[160px]">
+                          <SelectValue placeholder="Versão..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {versions.map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {v}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     )}
                   </div>
-                );
-              })()}
-            </div>
+                  <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
+                    {recipients.length} destinatário(s)
+                  </p>
+                </div>
 
-            <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 p-4 space-y-2">
-              <Label className="text-muted-foreground">Enviar email de teste</Label>
-              <p className="text-sm text-muted-foreground">
-                Use o mesmo assunto e corpo acima. Informe o email que receberá o teste.
-              </p>
-              <div className="flex flex-wrap gap-2 items-center">
-                <Input
-                  type="email"
-                  placeholder="email@exemplo.com"
-                  value={testEmail}
-                  onChange={(e) => setTestEmail(e.target.value)}
-                  className="max-w-[280px]"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleSendTest}
-                  disabled={isSendingTest || !testEmail.trim() || !assunto.trim() || !corpo.trim()}
-                >
-                  <Mail className="h-4 w-4 mr-2" />
-                  {isSendingTest ? "Enviando teste..." : "Enviar teste"}
-                </Button>
+                <div className="border-t border-[hsl(var(--border))] pt-6">
+                  <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
+                    Conteúdo do email
+                  </h2>
+                  <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+                    Escolha um modelo salvo ou gere com IA
+                  </p>
+
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <Label className="text-xs text-[hsl(var(--muted-foreground))]">Modelo salvo</Label>
+                      <Select value={selectedModeloId} onValueChange={setSelectedModeloId}>
+                        <SelectTrigger className="mt-1.5 w-full sm:max-w-sm">
+                          <SelectValue placeholder="Selecionar modelo..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {modelos.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
+                      <Label className="flex items-center gap-2 text-sm font-medium text-[hsl(var(--foreground))]">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        Gerar com IA
+                      </Label>
+                      <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                        {selectedModeloId
+                          ? "Com um modelo selecionado acima, a IA edita esse modelo conforme sua instrução. Depois salve na etapa 3 para atualizar o modelo."
+                          : "Descreva o que deseja; a IA gera o HTML com logo e cores do sistema."}
+                      </p>
+                      <textarea
+                        rows={3}
+                        value={instrucoesIA}
+                        onChange={(e) => setInstrucoesIA(e.target.value)}
+                        placeholder="Ex: Avisar sobre nova versão, pedir que acessem o painel. Incluir botão 'Acessar painel'."
+                        className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">
+                        Variáveis que pode usar no texto: {VARIAVEIS.map((v) => "{{" + v.key + "}}").join(", ")}
+                        {filterMode === "missingAnonKey" && (
+                          <>, {"{{" + VARIAVEL_LINK_ANON_KEY.key + "}}"}</>
+                        )}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3"
+                        onClick={handleGerarEmailIA}
+                        disabled={isGeneratingIA || !instrucoesIA.trim()}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        {isGeneratingIA ? "Gerando..." : "Gerar email"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end border-t border-[hsl(var(--border))] pt-6">
+                  <Button
+                    type="button"
+                    onClick={() => setStep(2)}
+                    disabled={!canGoToStep2}
+                  >
+                    Continuar
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={isSubmitting || recipients.length === 0}>
-                <Send className="h-4 w-4 mr-2" />
-                {isSubmitting ? "Enviando..." : "Enviar"}
-              </Button>
-              <Button type="button" variant="outline" onClick={handleSaveModelo} disabled={isSavingModelo}>
-                <Save className="h-4 w-4 mr-2" />
-                Salvar como modelo
-              </Button>
-              <Input
-                placeholder="Nome do modelo (opcional)"
-                value={modeloNome}
-                onChange={(e) => setModeloNome(e.target.value)}
-                className="max-w-[200px]"
-              />
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            {/* Etapa 2: Revisar email + assunto + enviar teste */}
+            {step === 2 && (
+              <div className="space-y-8 p-6 sm:p-8">
+                <div>
+                  <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
+                    Assunto
+                  </h2>
+                  <Input
+                    value={assunto}
+                    onChange={(e) => setAssunto(e.target.value)}
+                    placeholder="Assunto do email (use {{nomeSoftware}}, {{email}}, etc.)"
+                    className="mt-2"
+                  />
+                  <p className="mt-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                    Variáveis: {VARIAVEIS.map((v) => "{{" + v.key + "}}").join(", ")}
+                    {filterMode === "missingAnonKey" && (
+                      <>, {"{{" + VARIAVEL_LINK_ANON_KEY.key + "}}"}</>
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
+                      Preview do email
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => setShowBodyEditor((b) => !b)}
+                    >
+                      {showBodyEditor ? "Ocultar editor" : "Editar corpo (HTML)"}
+                    </Button>
+                  </div>
+                  <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+                    {recipients.length > 0
+                      ? `Preview com dados de: ${previewClient.nomeSoftware}`
+                      : "Selecione destinatários na etapa 1"}
+                  </p>
+                  {showBodyEditor && (
+                    <textarea
+                      rows={10}
+                      value={corpo}
+                      onChange={(e) => setCorpo(e.target.value)}
+                      className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="HTML do corpo..."
+                    />
+                  )}
+                  <div className="mt-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-inner">
+                    <div className="border-b border-[hsl(var(--border))] px-4 py-2 text-xs text-[hsl(var(--muted-foreground))]">
+                      Assunto: {assuntoPreview || "(vazio)"}
+                    </div>
+                    <div
+                      className="max-h-[360px] overflow-auto p-4 text-sm [&_img]:max-w-full"
+                      dangerouslySetInnerHTML={{
+                        __html: corpoPreview
+                          ? corpoPreview.includes("<")
+                            ? corpoPreview
+                            : "<pre class='whitespace-pre-wrap m-0 font-sans'>" +
+                              corpoPreview.replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+                              "</pre>"
+                          : "<span class='text-[hsl(var(--muted-foreground))]'>(Nenhum conteúdo)</span>",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-4">
+                  <Label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                    Enviar email de teste
+                  </Label>
+                  <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                    Envie para um email seu para conferir antes de enviar aos destinatários.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Input
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      className="max-w-[260px]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSendTest}
+                      disabled={
+                        isSendingTest ||
+                        !testEmail.trim() ||
+                        !assunto.trim() ||
+                        !corpo.trim()
+                      }
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      {isSendingTest ? "Enviando..." : "Enviar teste"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between border-t border-[hsl(var(--border))] pt-6">
+                  <Button type="button" variant="ghost" onClick={() => setStep(1)}>
+                    Voltar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    disabled={!canGoToStep3}
+                  >
+                    Continuar
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Etapa 3: Salvar modelo, Enviar agora, Agendar */}
+            {step === 3 && (
+              <div className="space-y-8 p-6 sm:p-8">
+                <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/20 p-4">
+                  <h2 className="text-sm font-semibold text-[hsl(var(--foreground))]">
+                    {selectedModeloId ? "Atualizar modelo" : "Salvar como modelo"}
+                  </h2>
+                  <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                    {selectedModeloId
+                      ? "As alterações serão salvas no modelo selecionado. Opcional: informe um novo nome."
+                      : "Guarde este email para reutilizar depois."}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Input
+                      placeholder={
+                        selectedModeloId
+                          ? "Novo nome (opcional, deixe em branco para manter)"
+                          : "Nome do modelo (opcional)"
+                      }
+                      value={modeloNome}
+                      onChange={(e) => setModeloNome(e.target.value)}
+                      className="max-w-[280px]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSaveModelo}
+                      disabled={isSavingModelo || !assunto.trim() || !corpo.trim()}
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {isSavingModelo
+                        ? "Salvando..."
+                        : selectedModeloId
+                          ? "Atualizar modelo"
+                          : "Salvar modelo"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h2 className="text-sm font-semibold text-[hsl(var(--foreground))]">
+                    Enviar email agora
+                  </h2>
+                  <form onSubmit={handleSendNow}>
+                    <Button
+                      type="submit"
+                      disabled={
+                        isSubmitting ||
+                        recipients.length === 0 ||
+                        !assunto.trim() ||
+                        !corpo.trim()
+                      }
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      {isSubmitting ? "Enviando..." : "Enviar para " + recipients.length + " destinatário(s)"}
+                    </Button>
+                  </form>
+                </div>
+
+                <div className="rounded-xl border border-[hsl(var(--border))] p-4">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--foreground))]">
+                    <Calendar className="h-4 w-4" />
+                    Agendar envio
+                  </h2>
+                  <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                    Escolha a data e hora; o backend envia automaticamente na data agendada.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Input
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(e) => setScheduledAt(e.target.value)}
+                      className="max-w-[240px]"
+                      min={new Date().toISOString().slice(0, 16)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAgendar}
+                      disabled={
+                        isScheduling ||
+                        !scheduledAt.trim() ||
+                        !assunto.trim() ||
+                        !corpo.trim() ||
+                        recipients.length === 0
+                      }
+                    >
+                      {isScheduling ? "Agendando..." : "Agendar"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex justify-start border-t border-[hsl(var(--border))] pt-6">
+                  <Button type="button" variant="ghost" onClick={() => setStep(2)}>
+                    Voltar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

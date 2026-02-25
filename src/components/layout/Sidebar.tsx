@@ -8,6 +8,7 @@ import {
   Menu,
   X,
   DollarSign,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ const navItems = [
   { to: "/admin/clientes", icon: Users, label: "Clientes" },
   { to: "/admin/emails", icon: Mail, label: "Emails" },
   { to: "/admin/atualizacoes", icon: Package, label: "Atualizações" },
+  { to: "/admin/instalacoes", icon: Settings, label: "Instalações" },
   { to: "/admin/vendas", icon: DollarSign, label: "Vendas" },
 ];
 
@@ -68,15 +70,15 @@ export function Sidebar() {
         <div className="flex flex-col h-full pt-16 lg:pt-6">
           <div
             className={cn(
-              "border-b border-border shrink-0 flex items-center",
-              isExpanded ? "px-3 py-4 min-h-[5rem] justify-center" : "px-0 py-4 justify-center min-h-[3.5rem]"
+              "border-b border-border shrink-0 flex items-center min-h-[3.5rem] py-4 justify-center",
+              isExpanded ? "px-3" : "px-0"
             )}
           >
             {isExpanded ? (
               <img
                 src={logoUrl}
                 alt="HubLabel"
-                className="w-full max-w-[220px] h-auto object-contain"
+                className="h-8 w-auto max-w-[220px] object-contain"
               />
             ) : (
               <img

@@ -9,6 +9,7 @@ import { ChangelogPublic } from "@/pages/ChangelogPublic";
 import { RoadmapPublic } from "@/pages/RoadmapPublic";
 import { InserirAnonKey } from "@/pages/InserirAnonKey";
 import { SalesAdmin } from "@/pages/SalesAdmin";
+import { InstalacoesAdmin } from "@/pages/InstalacoesAdmin";
 import { canAccessSales } from "@/lib/salesAccess";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 
@@ -70,6 +71,7 @@ export const router = createBrowserRouter(
             { path: "emails", element: <EmailAdmin /> },
             { path: "atualizacoes", element: <UpdatesAdmin /> },
             { path: "vendas", element: <SalesGuard /> },
+            { path: "instalacoes", element: <InstalacoesAdmin /> },
           ],
         },
         { index: true, element: <Navigate to="/admin/clientes" replace /> },
