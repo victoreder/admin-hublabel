@@ -48,6 +48,15 @@ const PRIORIDADE_LABEL: Record<PrioridadeInstalacao, string> = {
   normal: "Normal",
 };
 
+/** Formata telefone para (DDD) número: (11) 98765-4321 ou (11) 3456-7890 */
+function formatTelefone(value: string | null | undefined): string {
+  if (value == null || value === "") return "";
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits.length ? `(${digits}` : "";
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+}
+
 function formatDataCriacao(createdAt: string | undefined): string {
   if (!createdAt) return "—";
   try {
@@ -107,11 +116,11 @@ export function InstalacoesAdmin() {
     fetchInstalacoes();
   }, [fetchInstalacoes]);
 
-  const handleCreate = async (payload: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => {
+  const handleCreate = async (payload: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => {
     try {
       const { error } = await supabase.from("instalacoes").insert({
         telefone: payload.telefone || null,
-        dominio: payload.dominio.trim(),
+        dominio: (payload.dominio ?? "").trim() || "",
         acessos: payload.acessos || null,
         status: "aguardando",
         prioridade: payload.prioridade || "normal",
@@ -133,7 +142,7 @@ export function InstalacoesAdmin() {
             },
             body: JSON.stringify({
               telefone: payload.telefone || undefined,
-              dominio: payload.dominio.trim(),
+              dominio: (payload.dominio ?? "").trim() || undefined,
             }),
           });
           if (!res.ok) toast.error("Instalação criada, mas falha ao enviar email de notificação.");
@@ -211,11 +220,11 @@ export function InstalacoesAdmin() {
   }, []);
 
   const handleUpdateInstalacao = useCallback(
-    async (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => {
+    async (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => {
       try {
         const payload = {
           telefone: data.telefone ?? null,
-          dominio: data.dominio.trim(),
+          dominio: (data.dominio ?? "").trim() || "",
           acessos: data.acessos ?? null,
           prioridade: data.prioridade ?? "normal",
           ...(data.status != null && { status: data.status }),
@@ -506,11 +515,11 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
               {instalacao.dominio || "—"}
             </div>
             {instalacao.telefone && (
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
-                <Phone className="h-3.5 w-3.5 shrink-0" />
-                {instalacao.telefone}
-              </div>
-            )}
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
+                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                  {formatTelefone(instalacao.telefone)}
+                </div>
+              )}
             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 flex-wrap">
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3 shrink-0" />
@@ -562,7 +571,7 @@ interface InstalacaoDetailModalProps {
   open: boolean;
   onClose: () => void;
   onCopy: (instalacao: Instalacao) => void;
-  onUpdate: (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => Promise<void>;
+  onUpdate: (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -578,7 +587,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
 
   useEffect(() => {
     if (instalacao) {
-      setTelefone(instalacao.telefone ?? "");
+      setTelefone(formatTelefone(instalacao.telefone ?? ""));
       setDominio(instalacao.dominio ?? "");
       setAcessos(instalacao.acessos ?? "");
       setPrioridade((instalacao.prioridade as PrioridadeInstalacao) ?? "normal");
@@ -594,16 +603,11 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const d = dominio.trim();
-    if (!d) {
-      toast.error("Informe o domínio.");
-      return;
-    }
     setSubmitting(true);
     try {
       await onUpdate(instalacao.id, {
         telefone: telefone.trim() || undefined,
-        dominio: d,
+        dominio: dominio.trim(),
         acessos: acessos.trim() || undefined,
         prioridade,
         status,
@@ -641,18 +645,17 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
               <Input
                 id="detail-telefone"
                 value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
+                onChange={(e) => setTelefone(formatTelefone(e.target.value))}
                 placeholder="(00) 00000-0000"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="detail-dominio">Domínio *</Label>
+              <Label htmlFor="detail-dominio">Domínio</Label>
               <Input
                 id="detail-dominio"
                 value={dominio}
                 onChange={(e) => setDominio(e.target.value)}
                 placeholder="exemplo.com.br"
-                required
               />
             </div>
             <div className="space-y-2">
@@ -743,7 +746,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
               </div>
               <div>
                 <span className="text-muted-foreground">Telefone</span>
-                <p className="font-medium">{instalacao.telefone || "—"}</p>
+                <p className="font-medium">{instalacao.telefone ? formatTelefone(instalacao.telefone) : "—"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Criado em</span>
@@ -791,7 +794,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
 interface NewInstalacaoModalProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => void;
+  onSubmit: (data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => void;
 }
 
 function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps) {
@@ -812,16 +815,11 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const d = dominio.trim();
-    if (!d) {
-      toast.error("Informe o domínio.");
-      return;
-    }
     setSubmitting(true);
     try {
       await onSubmit({
         telefone: telefone.trim() || undefined,
-        dominio: d,
+        dominio: dominio.trim(),
         acessos: acessos.trim() || undefined,
         prioridade,
         coletar_acessos: coletarAcessos,
@@ -847,18 +845,17 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
             <Input
               id="telefone"
               value={telefone}
-              onChange={(e) => setTelefone(e.target.value)}
+              onChange={(e) => setTelefone(formatTelefone(e.target.value))}
               placeholder="(00) 00000-0000"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="dominio">Domínio *</Label>
+            <Label htmlFor="dominio">Domínio</Label>
             <Input
               id="dominio"
               value={dominio}
               onChange={(e) => setDominio(e.target.value)}
               placeholder="exemplo.com.br"
-              required
             />
           </div>
           <div className="space-y-2">

@@ -15,6 +15,7 @@ const WHATSAPP_SUPORTE = "https://wa.me/554891034326";
 interface ClientInfo {
   nomeSoftware: string;
   dominio: string;
+  supabaseUrl?: string;
 }
 
 export function InserirAnonKey() {
@@ -24,6 +25,8 @@ export function InserirAnonKey() {
   const [loadingInfo, setLoadingInfo] = useState(!!token);
   const [anonKey, setAnonKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [keyValidation, setKeyValidation] = useState<"idle" | "valid" | "invalid">("idle");
 
   useEffect(() => {
     if (!token) return;
@@ -40,13 +43,54 @@ export function InserirAnonKey() {
       .then((data) => {
         const nome = data?.nomeSoftware ?? data?.nome_software ?? "";
         const dominio = data?.dominio ?? "";
-        setClientInfo({ nomeSoftware: String(nome), dominio: String(dominio) });
+        const supabaseUrl = data?.supabaseUrl ?? "";
+        setClientInfo({
+          nomeSoftware: String(nome),
+          dominio: String(dominio),
+          supabaseUrl: String(supabaseUrl).trim() || undefined,
+        });
       })
       .catch(() => {
         setClientInfo(null);
       })
       .finally(() => setLoadingInfo(false));
   }, [token]);
+
+  const validateAnonKey = async (): Promise<boolean> => {
+    const url = clientInfo?.supabaseUrl?.trim();
+    const key = anonKey.trim();
+    if (!url || !key) {
+      if (!url && key) toast.error("Não foi possível validar: URL do projeto não está cadastrada. Salve a chave ou peça ao suporte para cadastrar a URL do Supabase.");
+      return false;
+    }
+    const base = url.replace(/\/$/, "");
+    setValidating(true);
+    setKeyValidation("idle");
+    try {
+      const res = await fetch(`${base}/rest/v1/`, {
+        method: "HEAD",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json",
+        },
+      });
+      if (res.status === 401) {
+        setKeyValidation("invalid");
+        toast.error("Chave inválida ou não pertence a este projeto Supabase.");
+        return false;
+      }
+      setKeyValidation("valid");
+      toast.success("Chave válida.");
+      return true;
+    } catch {
+      setKeyValidation("invalid");
+      toast.error("Não foi possível validar. Verifique a URL do projeto e a conexão.");
+      return false;
+    } finally {
+      setValidating(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +102,10 @@ export function InserirAnonKey() {
     if (!trimmed) {
       toast.error("Informe a Anon Key.");
       return;
+    }
+    if (clientInfo?.supabaseUrl && keyValidation !== "valid") {
+      const ok = await validateAnonKey();
+      if (!ok) return;
     }
     const backendUrl = getBackendUrl();
     if (!backendUrl) {
@@ -78,6 +126,7 @@ export function InserirAnonKey() {
       }
       toast.success("Anon Key salva com sucesso!");
       setAnonKey("");
+      setKeyValidation("idle");
     } catch {
       toast.error("Erro de conexão. Tente novamente.");
     } finally {
@@ -163,13 +212,44 @@ export function InserirAnonKey() {
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="anon-key">Supabase Anon Key</Label>
-              <Input
-                id="anon-key"
-                value={anonKey}
-                onChange={(e) => setAnonKey(e.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                className="font-mono text-sm"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="anon-key"
+                  value={anonKey}
+                  onChange={(e) => {
+                    setAnonKey(e.target.value);
+                    setKeyValidation("idle");
+                  }}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  className={`font-mono text-sm flex-1 ${
+                    keyValidation === "valid"
+                      ? "border-green-600 ring-green-600/20"
+                      : keyValidation === "invalid"
+                        ? "border-destructive ring-destructive/20"
+                        : ""
+                  }`}
+                />
+                {clientInfo?.supabaseUrl && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={validateAnonKey}
+                    disabled={validating || !anonKey.trim()}
+                  >
+                    {validating ? "..." : "Validar"}
+                  </Button>
+                )}
+              </div>
+              {clientInfo?.supabaseUrl && (
+                <p className="text-xs text-muted-foreground">
+                  A chave será validada com a URL do projeto cadastrada antes de salvar.
+                </p>
+              )}
+              {!clientInfo?.supabaseUrl && (
+                <p className="text-xs text-muted-foreground">
+                  Para validar a chave, cadastre a URL do projeto Supabase no painel do cliente.
+                </p>
+              )}
             </div>
             <Button type="submit" disabled={saving} className="w-full">
               {saving ? "Salvando..." : "Salvar"}

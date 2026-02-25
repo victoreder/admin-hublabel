@@ -321,7 +321,7 @@ app.get("/api/inserir-anon-key-info", async (req, res) => {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from("usuarios_SAAS_Agentes")
-      .select("nomeSoftware, dominio")
+      .select("nomeSoftware, dominio, supabase_url")
       .eq("anon_key_token", token)
       .maybeSingle();
     if (error) {
@@ -334,7 +334,8 @@ app.get("/api/inserir-anon-key-info", async (req, res) => {
     const row = data;
     const nome = row.nomeSoftware ?? row.nome_software ?? row.nomesoftware ?? "";
     const dominio = row.dominio ?? "";
-    res.status(200).json({ nomeSoftware: nome, dominio });
+    const supabaseUrl = row.supabase_url ?? "";
+    res.status(200).json({ nomeSoftware: nome, dominio, supabaseUrl });
   } catch (err) {
     console.error("Erro ao carregar info anon key.");
     res.status(500).json({ error: "Erro ao carregar." });
