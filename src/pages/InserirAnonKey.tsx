@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getBackendUrl } from "@/lib/utils";
 
-const VIDEO_URL = import.meta.env.VITE_VIDEO_ANON_KEY ?? "";
+const VIDEO_URL = import.meta.env.VITE_VIDEO_ANON_KEY ?? "https://www.youtube.com/embed/Y3zLDfuCmM8";
 const LOGO_URL = "https://xnfmuxuvnkhwoymxgmbw.supabase.co/storage/v1/object/public/versoes/LOGO.png";
+const SUPABASE_URL = "https://supabase.com";
+const WHATSAPP_SUPORTE = "https://wa.me/554891034326";
 
 interface ClientInfo {
   nomeSoftware: string;
@@ -130,14 +132,33 @@ export function InserirAnonKey() {
           </CardHeader>
           <CardContent className="space-y-6">
           {VIDEO_URL && (
-            <div className="aspect-video rounded-lg border border-input overflow-hidden bg-muted">
-              <iframe
-                title="Instruções para obter a Anon Key"
-                src={VIDEO_URL}
-                className="w-full h-full"
-                allowFullScreen
-              />
-            </div>
+            <>
+              <div className="aspect-video rounded-lg border border-input overflow-hidden bg-muted">
+                <iframe
+                  title="Instruções para obter a Anon Key"
+                  src={VIDEO_URL}
+                  className="w-full h-full"
+                  allowFullScreen
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  asChild
+                >
+                  <a href={SUPABASE_URL} target="_blank" rel="noopener noreferrer">
+                    Acessar Supabase
+                  </a>
+                </Button>
+                <Button type="button" variant="outline" asChild>
+                  <a href={WHATSAPP_SUPORTE} target="_blank" rel="noopener noreferrer">
+                    Falar com suporte
+                  </a>
+                </Button>
+              </div>
+            </>
           )}
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">

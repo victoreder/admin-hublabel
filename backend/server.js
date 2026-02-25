@@ -118,7 +118,10 @@ app.get("/api/inserir-anon-key-info", async (req, res) => {
   }
 });
 
-// Busca workflow do n8n e extrai URL de download (link do artefato no workflow)
+const BUCKET_VERSOES = "versoes";
+const MESES_3 = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+// Busca workflow do n8n, extrai URL de download, salva JSON completo no Supabase Storage
 app.get("/api/n8n/workflow-link", async (req, res) => {
   try {
     if (!N8N_URL || !N8N_WORKFLOW_ID || !N8N_API_KEY) {
@@ -126,6 +129,7 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
         error: "Backend não configurado para n8n. Defina N8N_URL, N8N_WORKFLOW_ID e N8N_API_KEY no .env.",
       });
     }
+    const version = String(req.query.version || "0.0.0").trim() || "0.0.0";
     const baseUrl = N8N_URL.replace(/\/$/, "");
     const url = `${baseUrl}/api/v1/workflows/${N8N_WORKFLOW_ID}`;
     const response = await fetch(url, {
@@ -142,6 +146,32 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
       });
     }
     const workflow = await response.json();
+
+    // Nome do arquivo: HUBLABEL-versao-diames (mês com 3 letras), ex: HUBLABEL-5.1.3-01mar
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mmm = MESES_3[now.getMonth()];
+    const safeVersion = version.replace(/[^0-9.]/g, ".").replace(/\.+/g, ".").replace(/^\.|\.$/g, "") || "0.0.0";
+    const fileName = `HUBLABEL-${safeVersion}-${dd}${mmm}.json`;
+    const storagePath = `workflows/${fileName}`;
+
+    const supabase = getSupabase();
+    const jsonBuffer = Buffer.from(JSON.stringify(workflow, null, 2), "utf8");
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(BUCKET_VERSOES)
+      .upload(storagePath, jsonBuffer, {
+        contentType: "application/json",
+        cacheControl: "3600",
+        upsert: true,
+      });
+    if (uploadError) {
+      console.error("Erro ao salvar JSON no Storage:", uploadError);
+      return res.status(500).json({
+        error: "Falha ao salvar arquivo no Storage. Verifique o bucket 'versoes' e políticas.",
+      });
+    }
+    const { data: urlData } = supabase.storage.from(BUCKET_VERSOES).getPublicUrl(uploadData.path);
+    const savedFileUrl = urlData.publicUrl;
 
     // Extrai a primeira URL http(s) encontrada no JSON (excluindo URLs do próprio n8n)
     function findUrl(obj, seen = new WeakSet()) {
@@ -171,8 +201,12 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
       return null;
     }
 
-    const link = findUrl(workflow);
-    res.status(200).json({ link: link || null });
+    // O link da atualização é a URL do arquivo JSON salvo no Storage
+    res.status(200).json({
+      link: savedFileUrl,
+      savedFileUrl,
+      savedFileName: fileName,
+    });
   } catch (err) {
     console.error("Erro ao buscar workflow n8n:", err);
     res.status(500).json({ error: "Falha ao buscar link do n8n." });

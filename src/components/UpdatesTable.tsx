@@ -8,14 +8,23 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ExternalLink } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { VersaoSAASAgente } from "@/types/database";
 
 interface UpdatesTableProps {
   updates: VersaoSAASAgente[];
+  onEdit?: (update: VersaoSAASAgente) => void;
+  onDelete?: (update: VersaoSAASAgente) => void;
 }
 
-export function UpdatesTable({ updates }: UpdatesTableProps) {
+export function UpdatesTable({ updates, onEdit, onDelete }: UpdatesTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -24,7 +33,7 @@ export function UpdatesTable({ updates }: UpdatesTableProps) {
           <TableHead>Data</TableHead>
           <TableHead>Correções</TableHead>
           <TableHead>Implementações</TableHead>
-          <TableHead>Link</TableHead>
+          {(onEdit || onDelete) && <TableHead className="w-[60px]">Ações</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -44,20 +53,34 @@ export function UpdatesTable({ updates }: UpdatesTableProps) {
             <TableCell className="max-w-[200px] truncate">
               {u.implementacoes || "-"}
             </TableCell>
-            <TableCell>
-              {u.linkVersao ? (
-                <a
-                  href={u.linkVersao}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-primary hover:underline"
-                >
-                  <ExternalLink className="h-4 w-4" /> Abrir
-                </a>
-              ) : (
-                "-"
-              )}
-            </TableCell>
+            {(onEdit || onDelete) && (
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" title="Ações">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {onEdit && (
+                      <DropdownMenuItem onClick={() => onEdit(u)}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Editar
+                      </DropdownMenuItem>
+                    )}
+                    {onDelete && (
+                      <DropdownMenuItem
+                        onClick={() => onDelete(u)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Excluir
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

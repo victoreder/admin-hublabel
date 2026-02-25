@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import type { VersaoSAASAgente } from "@/types/database";
 
 const LOGO_URL = "https://xnfmuxuvnkhwoymxgmbw.supabase.co/storage/v1/object/public/versoes/LOGO.png";
@@ -35,7 +35,7 @@ function VersionBlock({ u, isLatest }: VersionBlockProps) {
       id={isLatest ? "ultima-versao" : undefined}
       className={`grid grid-cols-1 md:grid-cols-[auto_1fr] gap-x-8 md:gap-x-12 gap-y-4 md:pt-0.5 ${
         isLatest
-          ? "rounded-xl border-2 border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/5 p-6 md:p-6"
+          ? "rounded-xl border-2 border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/5 md:px-8 md:py-8 px-5 py-6"
           : "border-b border-[hsl(var(--border))] pb-8 last:border-0 last:pb-0"
       }`}
     >
@@ -97,17 +97,6 @@ function VersionBlock({ u, isLatest }: VersionBlockProps) {
               className="w-full max-w-xl rounded-lg border border-[hsl(var(--border))] object-cover shadow-sm"
             />
           </div>
-        )}
-        {u.linkVersao && (
-          <a
-            href={u.linkVersao}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline"
-          >
-            {u.titulo ? "Leia mais" : "Baixar versão"}
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
         )}
       </div>
     </article>
