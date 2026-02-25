@@ -182,11 +182,19 @@ export function EmailAdmin() {
       toast.error("Nenhum destinatário selecionado.");
       return;
     }
+    const validRecipients = recipients.filter((c) => typeof c.email === "string" && c.email.trim() !== "");
+    if (validRecipients.length === 0) {
+      toast.error("Nenhum destinatário com email válido.");
+      return;
+    }
+    if (validRecipients.length < recipients.length) {
+      toast.warning(`${recipients.length - validRecipients.length} destinatário(s) sem email foram ignorados.`);
+    }
     setIsSubmitting(true);
     try {
       const hasVars = /\{\{(?:nomeSoftware|dominio|email|versao|linkInserirAnonKey)\}\}/.test(assunto + corpo);
       if (hasVars) {
-        for (const c of recipients) {
+        for (const c of validRecipients) {
           await sendEmail(
             [c.email],
             replaceVars(c, assunto),
@@ -194,7 +202,7 @@ export function EmailAdmin() {
           );
         }
       } else {
-        await sendEmail(recipients.map((c) => c.email));
+        await sendEmail(validRecipients.map((c) => c.email));
       }
       toast.success("Email(s) enviado(s) com sucesso!");
     } catch {

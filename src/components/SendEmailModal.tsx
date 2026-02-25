@@ -48,6 +48,16 @@ export function SendEmailModal({
       toast.error("Nenhum destinatário selecionado.");
       return;
     }
+    const destinatarios = clients
+      .map((c) => c.email)
+      .filter((e): e is string => typeof e === "string" && e.trim() !== "");
+    if (destinatarios.length === 0) {
+      toast.error("Nenhum destinatário com email válido.");
+      return;
+    }
+    if (destinatarios.length < clients.length) {
+      toast.warning(`${clients.length - destinatarios.length} destinatário(s) sem email foram ignorados.`);
+    }
     setIsSubmitting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -60,7 +70,7 @@ export function SendEmailModal({
           }),
         },
         body: JSON.stringify({
-          destinatarios: clients.map((c) => c.email),
+          destinatarios,
           assunto: subject,
           corpo: body,
         }),

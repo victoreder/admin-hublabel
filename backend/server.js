@@ -87,6 +87,10 @@ app.post("/api/enviar-email", async (req, res) => {
     if (!Array.isArray(destinatarios) || destinatarios.length === 0) {
       return res.status(400).json({ error: "destinatarios é obrigatório e deve ser um array não vazio." });
     }
+    const toList = destinatarios.filter((e) => typeof e === "string" && e.trim() !== "");
+    if (toList.length === 0) {
+      return res.status(400).json({ error: "Nenhum destinatário com email válido." });
+    }
     if (!assunto || typeof assunto !== "string") {
       return res.status(400).json({ error: "assunto é obrigatório." });
     }
@@ -97,7 +101,7 @@ app.post("/api/enviar-email", async (req, res) => {
     const transporter = getTransporter();
     const results = await transporter.sendMail({
       from: `"${fromName}" <${fromAddress}>`,
-      to: destinatarios,
+      to: toList,
       subject: assunto,
       text: corpo.replace(/<[^>]*>/g, ""),
       html: corpo.includes("<") ? corpo : undefined,

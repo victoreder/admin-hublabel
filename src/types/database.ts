@@ -78,11 +78,14 @@ export interface RoadmapVoto {
 
 export type StatusInstalacao = "aguardando" | "em_andamento" | "finalizado";
 
+export type PrioridadeInstalacao = "urgente" | "normal";
+
 export interface Instalacao {
   id: string;
   telefone?: string | null;
   dominio: string;
   acessos?: string | null;
   status: StatusInstalacao;
+  prioridade?: PrioridadeInstalacao;
   created_at?: string;
 }
