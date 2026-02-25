@@ -414,7 +414,7 @@ export function EmailAdmin() {
 
         {/* Stepper */}
         <nav className="mt-8 flex items-center gap-0 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-sm">
-          {STEPS.map((s, i) => {
+          {STEPS.map((s) => {
             const isActive = step === s.id;
             const isPast = step > s.id;
             const Icon = s.icon;
