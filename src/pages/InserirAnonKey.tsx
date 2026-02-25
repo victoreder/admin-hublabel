@@ -212,47 +212,30 @@ export function InserirAnonKey() {
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="anon-key">Supabase Anon Key</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="anon-key"
-                  value={anonKey}
-                  onChange={(e) => {
-                    setAnonKey(e.target.value);
-                    setKeyValidation("idle");
-                  }}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                  className={`font-mono text-sm flex-1 ${
-                    keyValidation === "valid"
-                      ? "border-green-600 ring-green-600/20"
-                      : keyValidation === "invalid"
-                        ? "border-destructive ring-destructive/20"
-                        : ""
-                  }`}
-                />
-                {clientInfo?.supabaseUrl && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={validateAnonKey}
-                    disabled={validating || !anonKey.trim()}
-                  >
-                    {validating ? "..." : "Validar"}
-                  </Button>
-                )}
-              </div>
+              <Input
+                id="anon-key"
+                value={anonKey}
+                onChange={(e) => {
+                  setAnonKey(e.target.value);
+                  setKeyValidation("idle");
+                }}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                className={`font-mono text-sm ${
+                  keyValidation === "valid"
+                    ? "border-green-600 ring-green-600/20"
+                    : keyValidation === "invalid"
+                      ? "border-destructive ring-destructive/20"
+                      : ""
+                }`}
+              />
               {clientInfo?.supabaseUrl && (
                 <p className="text-xs text-muted-foreground">
-                  A chave será validada com a URL do projeto cadastrada antes de salvar.
-                </p>
-              )}
-              {!clientInfo?.supabaseUrl && (
-                <p className="text-xs text-muted-foreground">
-                  Para validar a chave, cadastre a URL do projeto Supabase no painel do cliente.
+                  Ao salvar, a chave será validada com a URL do projeto antes de gravar.
                 </p>
               )}
             </div>
-            <Button type="submit" disabled={saving} className="w-full">
-              {saving ? "Salvando..." : "Salvar"}
+            <Button type="submit" disabled={saving || validating} className="w-full">
+              {validating ? "Validando..." : saving ? "Salvando..." : "Salvar"}
             </Button>
           </form>
           </CardContent>
