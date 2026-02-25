@@ -10,6 +10,7 @@ import { ClientDetails } from "@/components/ClientDetails";
 import { NewClientModal } from "@/components/NewClientModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { UsuarioSAASAgente, VersaoSAASAgente } from "@/types/database";
+import { getBackendUrl } from "@/lib/utils";
 import type { UpdateType } from "@/components/UpdateConfirmDialog";
 
 export function ClientAdmin() {
@@ -69,7 +70,7 @@ export function ClientAdmin() {
   };
 
   const handleNotifyUpdate = async (client: UsuarioSAASAgente, tipo: UpdateType) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
       return;

@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getBackendUrl } from "@/lib/utils";
 import type { UsuarioSAASAgente } from "@/types/database";
 
 interface SendEmailModalProps {
@@ -30,7 +31,7 @@ export function SendEmailModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
       return;

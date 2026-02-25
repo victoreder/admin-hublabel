@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getBackendUrl } from "@/lib/utils";
 
 const VIDEO_URL = import.meta.env.VITE_VIDEO_ANON_KEY ?? "";
 const LOGO_URL = "https://xnfmuxuvnkhwoymxgmbw.supabase.co/storage/v1/object/public/versoes/LOGO.png";
@@ -24,7 +25,7 @@ export function InserirAnonKey() {
 
   useEffect(() => {
     if (!token) return;
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       setLoadingInfo(false);
       return;
@@ -56,7 +57,7 @@ export function InserirAnonKey() {
       toast.error("Informe a Anon Key.");
       return;
     }
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       toast.error("Serviço não configurado. Entre em contato com o suporte.");
       return;

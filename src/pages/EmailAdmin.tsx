@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getBackendUrl } from "@/lib/utils";
 import type { UsuarioSAASAgente, ModeloEmail } from "@/types/database";
 
 const VARIAVEIS = [
@@ -138,7 +139,7 @@ export function EmailAdmin() {
     assuntoEnvio: string = assunto,
     corpoEnvio: string = corpo
   ) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
       return;

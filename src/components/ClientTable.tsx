@@ -25,6 +25,7 @@ import { MoreHorizontal, Eye, RefreshCw, Mail, KeyRound, Check } from "lucide-re
 import { AccessDialog } from "@/components/AccessDialog";
 import { UpdateConfirmDialog, type UpdateType } from "@/components/UpdateConfirmDialog";
 import { AnonKeyDialog } from "@/components/AnonKeyDialog";
+import { getBackendUrl } from "@/lib/utils";
 import type { UsuarioSAASAgente, ModeloEmail } from "@/types/database";
 
 function replaceVars(
@@ -65,7 +66,7 @@ export function ClientTable({
   }, []);
 
   const handleSendEmail = async (client: UsuarioSAASAgente, modelo: ModeloEmail) => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    const backendUrl = getBackendUrl();
     if (!backendUrl) {
       toast.error("Backend não configurado.");
       return;
