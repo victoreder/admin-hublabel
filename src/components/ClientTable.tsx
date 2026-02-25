@@ -21,7 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Eye, RefreshCw, Mail, KeyRound, Check } from "lucide-react";
+import { MoreHorizontal, Eye, RefreshCw, Mail, KeyRound, Check, TimerOff, Timer, Ban, ExternalLink } from "lucide-react";
 import { AccessDialog } from "@/components/AccessDialog";
 import { UpdateConfirmDialog, type UpdateType } from "@/components/UpdateConfirmDialog";
 import { AnonKeyDialog } from "@/components/AnonKeyDialog";
@@ -64,6 +64,31 @@ export function ClientTable({
       setModelos((data as ModeloEmail[]) ?? []);
     });
   }, []);
+
+    const INSTALADOR_URL = "https://app.disparamator.com.br/etapas-saas";
+
+  const handleAcessarInstalador = (client: UsuarioSAASAgente) => {
+    const url = new URL(INSTALADOR_URL);
+    url.searchParams.set("userId", client.id);
+    document.cookie = `userId=${encodeURIComponent(client.id)}; path=/; max-age=86400`;
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  };
+
+  const handleToggleAtualizacoesAutomaticas = async (client: UsuarioSAASAgente) => {
+    const novoValor = client.atualizacoes_automaticas === false;
+    try {
+      const { error } = await supabase
+        .from("usuarios_SAAS_Agentes")
+        .update({ atualizacoes_automaticas: novoValor })
+        .eq("id", client.id);
+      if (error) throw error;
+      toast.success(novoValor ? "Atualizações automáticas ativadas." : "Atualizações automáticas desativadas.");
+      onClientUpdated?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao alterar";
+      toast.error(msg);
+    }
+  };
 
   const handleSendEmail = async (client: UsuarioSAASAgente, modelo: ModeloEmail) => {
     const backendUrl = getBackendUrl();
@@ -122,6 +147,11 @@ export function ClientTable({
                         <Check className="h-3 w-3 inline mr-0.5" />
                       </Badge>
                     )}
+                    {client.atualizacoes_automaticas === false && (
+                      <Badge variant="destructive" className="text-xs p-0.5" title="Atualizações automáticas desativadas">
+                        <Ban className="h-3 w-3" />
+                      </Badge>
+                    )}
                     {missingAnonKey && (
                       <Badge
                         variant="destructive"
@@ -154,6 +184,23 @@ export function ClientTable({
                     <DropdownMenuItem onClick={() => setAccessClient(client)}>
                       <KeyRound className="h-4 w-4 mr-2" />
                       Ver acessos
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleAcessarInstalador(client)}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Acessar instalador
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleToggleAtualizacoesAutomaticas(client)}>
+                      {client.atualizacoes_automaticas === false ? (
+                        <>
+                          <Timer className="h-4 w-4 mr-2" />
+                          Ativar atualizações automáticas
+                        </>
+                      ) : (
+                        <>
+                          <TimerOff className="h-4 w-4 mr-2" />
+                          Desativar atualizações automáticas
+                        </>
+                      )}
                     </DropdownMenuItem>
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
@@ -236,6 +283,11 @@ export function ClientTable({
                       <Check className="h-3.5 w-3.5" />
                     </Badge>
                   )}
+                  {client.atualizacoes_automaticas === false && (
+                    <Badge variant="destructive" className="text-xs p-0.5" title="Atualizações automáticas desativadas">
+                      <Ban className="h-3.5 w-3.5" />
+                    </Badge>
+                  )}
                 </div>
               </TableCell>
               <TableCell>
@@ -261,6 +313,23 @@ export function ClientTable({
                     <DropdownMenuItem onClick={() => setAccessClient(client)}>
                       <KeyRound className="h-4 w-4 mr-2" />
                       Ver acessos
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleAcessarInstalador(client)}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Acessar instalador
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleToggleAtualizacoesAutomaticas(client)}>
+                      {client.atualizacoes_automaticas === false ? (
+                        <>
+                          <Timer className="h-4 w-4 mr-2" />
+                          Ativar atualizações automáticas
+                        </>
+                      ) : (
+                        <>
+                          <TimerOff className="h-4 w-4 mr-2" />
+                          Desativar atualizações automáticas
+                        </>
+                      )}
                     </DropdownMenuItem>
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>

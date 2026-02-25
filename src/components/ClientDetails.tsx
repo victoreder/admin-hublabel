@@ -137,6 +137,7 @@ type EditableKey = keyof Pick<
   | "versao"
   | "telefoneSuporte"
   | "acessoAtualizacao"
+  | "atualizacoes_automaticas"
   | "urlEvolution"
   | "apiEvolution"
   | "n8nUrl"
@@ -163,8 +164,9 @@ export function ClientDetails({ client, open, onClose, onClientUpdated }: Client
   useEffect(() => {
     if (!editing || !localClient) return;
     const k = editing.key;
-    if (k === "acessoAtualizacao") {
-      setEditValue(localClient.acessoAtualizacao ? "true" : "false");
+    if (k === "acessoAtualizacao" || k === "atualizacoes_automaticas") {
+      const val = localClient[k];
+      setEditValue(val ? "true" : "false");
     } else {
       const v = localClient[k];
       setEditValue(typeof v === "string" ? v : v != null ? String(v) : "");
@@ -179,6 +181,8 @@ export function ClientDetails({ client, open, onClose, onClientUpdated }: Client
       let payload: Record<string, unknown> = {};
       if (key === "acessoAtualizacao") {
         payload.acessoAtualizacao = editValue === "true";
+      } else if (key === "atualizacoes_automaticas") {
+        payload.atualizacoes_automaticas = editValue === "true";
       } else if (key === "senha") {
         if (!editValue.trim()) {
           setEditing(null);
@@ -241,6 +245,12 @@ export function ClientDetails({ client, open, onClose, onClientUpdated }: Client
                 onEdit={openEdit}
                 fieldKey="acessoAtualizacao"
               />
+              <Field
+                label="Atualizações automáticas"
+                value={localClient.atualizacoes_automaticas === false ? "Não" : "Sim"}
+                onEdit={openEdit}
+                fieldKey="atualizacoes_automaticas"
+              />
             </Section>
 
             {(hasEvolution || localClient.n8nUrl) && (
@@ -283,9 +293,9 @@ export function ClientDetails({ client, open, onClose, onClientUpdated }: Client
             <DialogTitle>Editar {editing?.label}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            {editing?.key === "acessoAtualizacao" ? (
+            {(editing?.key === "acessoAtualizacao" || editing?.key === "atualizacoes_automaticas") ? (
               <>
-                <Label>Acesso à atualização</Label>
+                <Label>{editing.label}</Label>
                 <div className="flex gap-2">
                   <Button
                     type="button"

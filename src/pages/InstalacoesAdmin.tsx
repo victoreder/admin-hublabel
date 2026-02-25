@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, GripVertical, Copy, Phone, Globe, Clock, AlertCircle, Pencil, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Plus, GripVertical, Copy, Phone, Globe, Clock, AlertCircle, Pencil, Trash2, Upload, X, Download } from "lucide-react";
 import { format, parseISO, addHours, differenceInHours, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/lib/supabase";
@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
-import type { Instalacao, StatusInstalacao, PrioridadeInstalacao } from "@/types/database";
+import type { Instalacao, StatusInstalacao, PrioridadeInstalacao, InstalacaoArquivo } from "@/types/database";
 import { gerarTextoAcessos } from "@/lib/instalacaoAcessos";
 import { cn, getBackendUrl } from "@/lib/utils";
 
@@ -42,19 +42,21 @@ const COLUMN_HEADER_ACCENT: Record<StatusInstalacao, string> = {
 
 const DRAG_TYPE = "application/x-instalacao-id";
 const PRAZO_ENTREGA_HORAS = 24;
+const BUCKET_INSTALACOES = "versoes";
 
 const PRIORIDADE_LABEL: Record<PrioridadeInstalacao, string> = {
   urgente: "Urgente",
   normal: "Normal",
 };
 
-/** Formata telefone para (DDD) número: (11) 98765-4321 ou (11) 3456-7890 */
+/** Formata telefone: (DDD) XXXX-XXXX até 10 dígitos; (DDD) XXXXX-XXXX com 11 dígitos */
 function formatTelefone(value: string | null | undefined): string {
   if (value == null || value === "") return "";
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 2) return digits.length ? `(${digits}` : "";
   if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
 function formatDataCriacao(createdAt: string | undefined): string {
@@ -100,7 +102,7 @@ export function InstalacoesAdmin() {
       const { data, error } = await supabase
         .from("instalacoes")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
       if (error) throw error;
       setInstalacoes((data as Instalacao[]) ?? []);
     } catch (err) {
@@ -116,7 +118,7 @@ export function InstalacoesAdmin() {
     fetchInstalacoes();
   }, [fetchInstalacoes]);
 
-  const handleCreate = async (payload: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => {
+  const handleCreate = async (payload: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean; arquivos?: InstalacaoArquivo[] }) => {
     try {
       const { error } = await supabase.from("instalacoes").insert({
         telefone: payload.telefone || null,
@@ -125,6 +127,7 @@ export function InstalacoesAdmin() {
         status: "aguardando",
         prioridade: payload.prioridade || "normal",
         coletar_acessos: payload.coletar_acessos ?? false,
+        arquivos: payload.arquivos ?? [],
       });
       if (error) throw error;
       setModalOpen(false);
@@ -159,15 +162,25 @@ export function InstalacoesAdmin() {
   const handleStatusChange = useCallback(
     async (id: string, newStatus: StatusInstalacao) => {
       const instalacao = instalacoes.find((i) => i.id === id);
+      const tirarColetarAcessos = newStatus === "em_andamento" && instalacao?.coletar_acessos;
+      const payload: { status: StatusInstalacao; coletar_acessos?: boolean } = { status: newStatus };
+      if (tirarColetarAcessos) payload.coletar_acessos = false;
       try {
         const { error } = await supabase
           .from("instalacoes")
-          .update({ status: newStatus })
+          .update(payload)
           .eq("id", id);
         if (error) throw error;
         setInstalacoes((prev) =>
-          prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
+          prev.map((i) =>
+            i.id === id ? { ...i, status: newStatus, ...(tirarColetarAcessos && { coletar_acessos: false }) } : i
+          )
         );
+        if (tirarColetarAcessos) {
+          setSelectedInstalacao((prev) =>
+            prev?.id === id ? { ...prev, status: newStatus, coletar_acessos: false } : prev
+          );
+        }
         toast.success(`Movido para ${STATUS_LABEL[newStatus]}`);
         if (newStatus === "finalizado" && instalacao && getBackendUrl()) {
           try {
@@ -220,7 +233,7 @@ export function InstalacoesAdmin() {
   }, []);
 
   const handleUpdateInstalacao = useCallback(
-    async (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => {
+    async (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean; arquivos?: InstalacaoArquivo[] }) => {
       try {
         const payload = {
           telefone: data.telefone ?? null,
@@ -229,19 +242,20 @@ export function InstalacoesAdmin() {
           prioridade: data.prioridade ?? "normal",
           ...(data.status != null && { status: data.status }),
           ...(data.coletar_acessos !== undefined && { coletar_acessos: data.coletar_acessos }),
+          ...(data.arquivos !== undefined && { arquivos: data.arquivos }),
         };
         const { error } = await supabase.from("instalacoes").update(payload).eq("id", id);
         if (error) throw error;
         setInstalacoes((prev) =>
           prev.map((i) =>
             i.id === id
-              ? { ...i, ...payload, status: data.status ?? i.status, coletar_acessos: data.coletar_acessos ?? i.coletar_acessos }
+              ? { ...i, ...payload, status: data.status ?? i.status, coletar_acessos: data.coletar_acessos ?? i.coletar_acessos, arquivos: data.arquivos ?? i.arquivos }
               : i
           )
         );
         setSelectedInstalacao((prev) =>
           prev?.id === id
-            ? { ...prev, ...payload, status: data.status ?? prev.status, coletar_acessos: data.coletar_acessos ?? prev.coletar_acessos }
+            ? { ...prev, ...payload, status: data.status ?? prev.status, coletar_acessos: data.coletar_acessos ?? prev.coletar_acessos, arquivos: data.arquivos ?? prev.arquivos }
             : prev
         );
         toast.success("Instalação atualizada.");
@@ -276,6 +290,18 @@ export function InstalacoesAdmin() {
 
   const byStatus = (status: StatusInstalacao) =>
     filteredInstalacoes.filter((i) => i.status === status);
+
+  /** Urgente sempre em cima; dentro de cada grupo, mais antigo em cima (created_at ascendente). */
+  const sortCardsForColumn = useCallback((cards: Instalacao[]) => {
+    return [...cards].sort((a, b) => {
+      const aUrg = a.prioridade === "urgente" ? 1 : 0;
+      const bUrg = b.prioridade === "urgente" ? 1 : 0;
+      if (bUrg !== aUrg) return bUrg - aUrg;
+      const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tA - tB;
+    });
+  }, []);
 
   const setPresetDays = (days: number) => {
     const { dateFrom: from, dateTo: to } = getDefaultDateRange(days);
@@ -349,7 +375,7 @@ export function InstalacoesAdmin() {
             status={status}
             label={STATUS_LABEL[status]}
             count={byStatus(status).length}
-            cards={byStatus(status)}
+            cards={sortCardsForColumn(byStatus(status))}
             dragId={dragId}
             onCardClick={setSelectedInstalacao}
             onDragStart={(id) => {
@@ -409,21 +435,31 @@ function KanbanColumn({
   onCopy,
 }: KanbanColumnProps) {
   const [isOver, setIsOver] = useState(false);
+  const columnRef = useRef<HTMLDivElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
     setIsOver(true);
   };
-  const handleDragLeave = () => setIsOver(false);
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && columnRef.current?.contains(related)) return;
+    setIsOver(false);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsOver(false);
     onDrop();
   };
 
   return (
     <div
+      ref={columnRef}
       className={cn(
         COLUMN_BASE,
         COLUMN_ACCENT[status],
@@ -469,10 +505,26 @@ interface KanbanCardProps {
 }
 
 function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEnd, onCopy }: KanbanCardProps) {
+  const justDraggedRef = useRef(false);
+
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(DRAG_TYPE, instalacao.id);
+    e.dataTransfer.setData("text/plain", instalacao.id);
     e.dataTransfer.effectAllowed = "move";
     onDragStart();
+  };
+
+  const handleDragEnd = () => {
+    justDraggedRef.current = true;
+    onDragEnd();
+  };
+
+  const handleCardClick = () => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
+    onCardClick();
   };
 
   const isFinalizado = instalacao.status === "finalizado";
@@ -482,7 +534,7 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
     : getHorasParaEntregar(instalacao.created_at);
 
   const tagClasses: Record<"verde" | "amarelo" | "vermelho" | "entregue", string> = {
-    verde: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700",
+    verde: "bg-muted/80 text-muted-foreground border-border",
     amarelo: "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-300 dark:border-amber-700",
     vermelho: "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200 border-red-300 dark:border-red-700",
     entregue: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700",
@@ -491,7 +543,7 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
   return (
     <Card
       className={cn(
-        "bg-card shadow-sm transition-shadow hover:shadow-md",
+        "bg-card shadow-sm transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing",
         isDragging && "opacity-50 shadow-lg scale-[0.98]"
       )}
     >
@@ -500,51 +552,61 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
           <div
             draggable
             onDragStart={handleDragStart}
-            onDragEnd={onDragEnd}
-            className="shrink-0 mt-0.5 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+            onDragEnd={handleDragEnd}
+            onClick={handleCardClick}
+            className="flex min-w-0 flex-1 flex-col gap-2 items-stretch select-none"
           >
-            <GripVertical className="h-4 w-4" aria-hidden />
-          </div>
-          <button
-            type="button"
-            onClick={onCardClick}
-            className="min-w-0 flex-1 text-left rounded-md hover:bg-accent/50 transition-colors -m-1 p-1"
-          >
-            <div className="flex items-center gap-1.5 font-medium text-foreground truncate">
-              <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              {instalacao.dominio || "—"}
-            </div>
-            {instalacao.telefone && (
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
-                  <Phone className="h-3.5 w-3.5 shrink-0" />
-                  {formatTelefone(instalacao.telefone)}
+            <div className="flex items-start gap-2">
+              <div className="shrink-0 mt-0.5 text-muted-foreground">
+                <GripVertical className="h-4 w-4" aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 font-medium text-foreground truncate">
+                  <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {instalacao.dominio || "—"}
                 </div>
-              )}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 flex-wrap">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3 shrink-0" />
-                {dataCriacao}
-              </span>
-              {instalacao.prioridade === "urgente" && (
-                <span className="inline-flex items-center gap-1 rounded border border-red-400/60 bg-red-500/15 px-1.5 py-0.5 text-red-700 dark:text-red-300 font-medium">
-                  <AlertCircle className="h-3 w-3" />
-                  Urgente
-                </span>
-              )}
-              {instalacao.coletar_acessos && (
-                <span className="inline-flex items-center rounded border border-amber-400/60 bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-300 font-medium">
-                  Coletar Acessos
-                </span>
-              )}
+                {instalacao.telefone && (
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
+                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                    {formatTelefone(instalacao.telefone)}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 flex-wrap">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3 shrink-0" />
+                    {dataCriacao}
+                  </span>
+                  {instalacao.prioridade === "urgente" && (
+                    <span className="inline-flex items-center gap-1 rounded border border-red-400/60 bg-red-500/15 px-1.5 py-0.5 text-red-700 dark:text-red-300 font-medium">
+                      <AlertCircle className="h-3 w-3" />
+                      Urgente
+                    </span>
+                  )}
+                  {instalacao.coletar_acessos && (
+                    <span className="inline-flex items-center rounded border border-amber-400/60 bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-300 font-medium">
+                      Coletar Acessos
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-          </button>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 w-fit rounded-md border px-2 py-0.5 text-xs font-medium",
+                tagClasses[prazo.tipo]
+              )}
+            >
+              {prazo.texto}
+            </span>
+          </div>
           {isFinalizado && (
             <Button
               variant="ghost"
               size="icon"
-              className="shrink-0 h-8 w-8"
+              className="shrink-0 h-8 w-8 cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 onCopy(instalacao);
               }}
               title="Copiar acessos"
@@ -553,14 +615,6 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
             </Button>
           )}
         </div>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 w-fit rounded-md border px-2 py-0.5 text-xs font-medium",
-            tagClasses[prazo.tipo]
-          )}
-        >
-          {prazo.texto}
-        </span>
       </CardContent>
     </Card>
   );
@@ -571,7 +625,7 @@ interface InstalacaoDetailModalProps {
   open: boolean;
   onClose: () => void;
   onCopy: (instalacao: Instalacao) => void;
-  onUpdate: (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => Promise<void>;
+  onUpdate: (id: string, data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean; arquivos?: InstalacaoArquivo[] }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -583,7 +637,10 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
   const [prioridade, setPrioridade] = useState<PrioridadeInstalacao>("normal");
   const [status, setStatus] = useState<StatusInstalacao>("aguardando");
   const [coletarAcessos, setColetarAcessos] = useState(false);
+  const [arquivosList, setArquivosList] = useState<InstalacaoArquivo[]>([]);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const detailFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (instalacao) {
@@ -593,6 +650,8 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
       setPrioridade((instalacao.prioridade as PrioridadeInstalacao) ?? "normal");
       setStatus(instalacao.status);
       setColetarAcessos(instalacao.coletar_acessos ?? false);
+      setArquivosList(instalacao.arquivos ?? []);
+      setNewFiles([]);
       setEditing(false);
     }
   }, [instalacao]);
@@ -601,10 +660,43 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
   const dataCriacao = formatDataCriacao(instalacao.created_at);
   const isFinalizado = instalacao.status === "finalizado";
 
+  const handleDetailFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (!selected?.length) return;
+    setNewFiles((prev) => [...prev, ...Array.from(selected)]);
+    e.target.value = "";
+  };
+
+  const removeArquivo = (index: number) => {
+    setArquivosList((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeNewFile = (index: number) => {
+    setNewFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const uploaded: InstalacaoArquivo[] = [];
+      for (let i = 0; i < newFiles.length; i++) {
+        const file = newFiles[i];
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `instalacoes/uploads/${Date.now()}-${i}-${safeName}`;
+        const { data, error } = await supabase.storage.from(BUCKET_INSTALACOES).upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+        if (error) {
+          toast.error(`Falha ao enviar "${file.name}". ${error.message}`);
+          setSubmitting(false);
+          return;
+        }
+        const { data: urlData } = supabase.storage.from(BUCKET_INSTALACOES).getPublicUrl(data.path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl });
+      }
+      const arquivosFinal = [...arquivosList, ...uploaded];
       await onUpdate(instalacao.id, {
         telefone: telefone.trim() || undefined,
         dominio: dominio.trim(),
@@ -612,6 +704,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
         prioridade,
         status,
         coletar_acessos: coletarAcessos,
+        arquivos: arquivosFinal,
       });
       setEditing(false);
     } finally {
@@ -697,6 +790,69 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
                 Coletar Acessos
               </Label>
             </div>
+            <div className="space-y-3">
+              <Label className="block">Arquivos</Label>
+              {(arquivosList.length > 0 || newFiles.length > 0) && (
+                <ul className="text-sm space-y-1.5">
+                  {arquivosList.map((arq, i) => (
+                    <li key={`e-${i}`} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5">
+                      <a
+                        href={arq.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate flex-1 text-primary hover:underline flex items-center gap-1.5"
+                      >
+                        <Download className="h-4 w-4 shrink-0" />
+                        {arq.name}
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => removeArquivo(i)}
+                        aria-label="Remover arquivo"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  ))}
+                  {newFiles.map((file, i) => (
+                    <li key={`n-${i}`} className="flex items-center gap-2 rounded-md bg-primary/5 border border-primary/20 px-2 py-1.5">
+                      <span className="truncate flex-1 text-sm">{file.name} (novo)</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => removeNewFile(i)}
+                        aria-label="Remover"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <input
+                ref={detailFileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleDetailFileChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => detailFileInputRef.current?.click()}
+                disabled={submitting}
+                className="gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                Adicionar arquivos
+              </Button>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="detail-acessos">Acessos</Label>
               <Textarea
@@ -768,6 +924,26 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
                 </pre>
               </div>
             )}
+            {instalacao.arquivos && instalacao.arquivos.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm text-muted-foreground">Arquivos</span>
+                <ul className="text-sm space-y-1.5">
+                  {instalacao.arquivos.map((arq, i) => (
+                    <li key={i}>
+                      <a
+                        href={arq.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-primary hover:underline"
+                      >
+                        <Download className="h-4 w-4 shrink-0" />
+                        {arq.name}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {isFinalizado && (
               <Button onClick={() => onCopy(instalacao)} className="w-full">
                 <Copy className="h-4 w-4 mr-2" />
@@ -794,7 +970,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
 interface NewInstalacaoModalProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => void;
+  onSubmit: (data: { telefone?: string; dominio?: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean; arquivos?: InstalacaoArquivo[] }) => void;
 }
 
 function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps) {
@@ -803,7 +979,9 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
   const [acessos, setAcessos] = useState("");
   const [prioridade, setPrioridade] = useState<PrioridadeInstalacao>("normal");
   const [coletarAcessos, setColetarAcessos] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setTelefone("");
@@ -811,18 +989,50 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
     setAcessos("");
     setPrioridade("normal");
     setColetarAcessos(false);
+    setFiles([]);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (!selected?.length) return;
+    setFiles((prev) => [...prev, ...Array.from(selected)]);
+    e.target.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const arquivos: InstalacaoArquivo[] = [];
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const path = `instalacoes/uploads/${Date.now()}-${i}-${safeName}`;
+          const { data, error } = await supabase.storage.from(BUCKET_INSTALACOES).upload(path, file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+          if (error) {
+            toast.error(`Falha ao enviar "${file.name}". ${error.message}`);
+            setSubmitting(false);
+            return;
+          }
+          const { data: urlData } = supabase.storage.from(BUCKET_INSTALACOES).getPublicUrl(data.path);
+          arquivos.push({ name: file.name, url: urlData.publicUrl });
+        }
+      }
       await onSubmit({
         telefone: telefone.trim() || undefined,
         dominio: dominio.trim(),
         acessos: acessos.trim() || undefined,
         prioridade,
         coletar_acessos: coletarAcessos,
+        arquivos: arquivos.length ? arquivos : undefined,
       });
       reset();
     } finally {
@@ -891,6 +1101,46 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
               placeholder="Cole ou descreva todos os acessos aqui..."
               className="min-h-[120px]"
             />
+          </div>
+          <div className="space-y-3">
+            <Label className="block">Arquivos</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={submitting}
+              className="gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              Selecionar arquivos
+            </Button>
+            {files.length > 0 && (
+              <ul className="text-sm space-y-1 mt-3">
+                {files.map((file, i) => (
+                  <li key={`${file.name}-${i}`} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1.5">
+                    <span className="truncate flex-1">{file.name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => removeFile(i)}
+                      aria-label="Remover arquivo"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

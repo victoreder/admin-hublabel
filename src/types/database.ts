@@ -7,6 +7,8 @@ export interface UsuarioSAASAgente {
   urlEvolution?: string;
   apiEvolution?: string;
   acessoAtualizacao?: boolean;
+  /** Se false, atualizações automáticas estão desativadas para este cliente. */
+  atualizacoes_automaticas?: boolean;
   corPrincipal?: string;
   corSecundaria?: string;
   urlLogo?: string;
@@ -90,6 +92,11 @@ export type StatusInstalacao = "aguardando" | "em_andamento" | "finalizado";
 
 export type PrioridadeInstalacao = "urgente" | "normal";
 
+export interface InstalacaoArquivo {
+  name: string;
+  url: string;
+}
+
 export interface Instalacao {
   id: string;
   telefone?: string | null;
@@ -98,5 +105,6 @@ export interface Instalacao {
   status: StatusInstalacao;
   prioridade?: PrioridadeInstalacao;
   coletar_acessos?: boolean;
+  arquivos?: InstalacaoArquivo[];
   created_at?: string;
 }

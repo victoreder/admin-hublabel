@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Plus, Search, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ClientTable } from "@/components/ClientTable";
 import { ClientDetails } from "@/components/ClientDetails";
 import { NewClientModal } from "@/components/NewClientModal";
@@ -20,6 +21,9 @@ export function ClientAdmin() {
   const [loading, setLoading] = useState(true);
   const [detailsClient, setDetailsClient] = useState<UsuarioSAASAgente | null>(null);
   const [newClientOpen, setNewClientOpen] = useState(false);
+  const [filterNuncaInstalado, setFilterNuncaInstalado] = useState(false);
+  const [filterSemAnonKey, setFilterSemAnonKey] = useState(false);
+  const [filterUltimaVersao, setFilterUltimaVersao] = useState(false);
 
   const fetchClients = useCallback(async (searchTerm: string) => {
     setLoading(true);
@@ -69,6 +73,24 @@ export function ClientAdmin() {
     toast.success("Cliente criado com sucesso!");
   };
 
+  const filteredClients = useMemo(() => {
+    if (!filterNuncaInstalado && !filterSemAnonKey && !filterUltimaVersao) return clients;
+    return clients.filter((c) => {
+      if (filterNuncaInstalado) {
+        const nuncaInstalado = c.dominio == null || String(c.dominio).trim() === "";
+        if (!nuncaInstalado) return false;
+      }
+      if (filterSemAnonKey) {
+        const semAnonKey = c.supabase_anon_key == null || String(c.supabase_anon_key).trim() === "";
+        if (!semAnonKey) return false;
+      }
+      if (filterUltimaVersao && latestVersion) {
+        if (c.versao !== latestVersion) return false;
+      }
+      return true;
+    });
+  }, [clients, latestVersion, filterNuncaInstalado, filterSemAnonKey, filterUltimaVersao]);
+
   const handleNotifyUpdate = async (client: UsuarioSAASAgente, tipo: UpdateType) => {
     const backendUrl = getBackendUrl();
     if (!backendUrl) {
@@ -93,10 +115,19 @@ export function ClientAdmin() {
     }
   };
 
+  const hasActiveFilter = filterNuncaInstalado || filterSemAnonKey || filterUltimaVersao;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold">Clientes</h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-2xl font-bold">Clientes</h1>
+          {!loading && (
+            <Badge variant="secondary" className="font-normal text-sm">
+              {hasActiveFilter ? `${filteredClients.length} de ${clients.length}` : clients.length} {clients.length === 1 ? "cliente" : "clientes"}
+            </Badge>
+          )}
+        </div>
         <Button onClick={() => setNewClientOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Novo cliente
@@ -106,14 +137,39 @@ export function ClientAdmin() {
       <Card className="w-full">
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">Lista de clientes</CardTitle>
-          <div className="relative mt-2 w-full max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nome, email ou domínio..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-2">
+            <div className="relative w-full sm:max-w-sm shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, email ou domínio..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={filterNuncaInstalado ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterNuncaInstalado((v) => !v)}
+              >
+                Nunca instalado
+              </Button>
+              <Button
+                variant={filterSemAnonKey ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterSemAnonKey((v) => !v)}
+              >
+                Sem Anon Key
+              </Button>
+              <Button
+                variant={filterUltimaVersao ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterUltimaVersao((v) => !v)}
+              >
+                Última versão
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="w-full overflow-x-auto">
@@ -125,9 +181,13 @@ export function ClientAdmin() {
             </div>
           ) : clients.length === 0 ? (
             <EmptyState onAdd={() => setNewClientOpen(true)} />
+          ) : filteredClients.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              Nenhum cliente corresponde aos filtros selecionados.
+            </div>
           ) : (
             <ClientTable
-              clients={clients}
+              clients={filteredClients}
               latestVersion={latestVersion}
               onViewDetails={setDetailsClient}
               onNotifyUpdate={handleNotifyUpdate}

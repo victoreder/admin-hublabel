@@ -270,6 +270,8 @@ export function SalesAdmin() {
     (s, v) => s + faturamentoLiquido(Number(v.valor), Number(v.percentual_taxa_checkout ?? 0)),
     0
   );
+  const quantidadeVendas = vendasFiltradas.length;
+  const ticketMedio = quantidadeVendas > 0 ? totalVendas / quantidadeVendas : 0;
 
   const porDia = vendasFiltradas.reduce<Record<string, number>>((acc, v) => {
     const key = v.data_venda
@@ -293,9 +295,14 @@ export function SalesAdmin() {
     acc[nome] = (acc[nome] ?? 0) + Number(v.valor);
     return acc;
   }, {});
+  const porVendedorQtd = vendasFiltradas.reduce<Record<string, number>>((acc, v) => {
+    const nome = v.vendedor?.trim() || "Sem nome";
+    acc[nome] = (acc[nome] ?? 0) + 1;
+    return acc;
+  }, {});
   const rankingVendedores = Object.entries(porVendedor)
     .sort((a, b) => b[1] - a[1])
-    .map(([nome, total]) => ({ nome, total }));
+    .map(([nome, total]) => ({ nome, total, qtd: porVendedorQtd[nome] ?? 0 }));
 
   const handleCreateSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -506,7 +513,7 @@ export function SalesAdmin() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Total de vendas (bruto)</CardTitle>
@@ -524,6 +531,26 @@ export function SalesAdmin() {
           <CardContent>
             <Badge variant="secondary" className="text-lg px-4 py-2">
               R$ {totalLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Badge>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Quantidade de vendas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Badge variant="secondary" className="text-lg px-4 py-2">
+              {quantidadeVendas}
+            </Badge>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Ticket médio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Badge variant="secondary" className="text-lg px-4 py-2">
+              R$ {ticketMedio.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Badge>
           </CardContent>
         </Card>
@@ -592,11 +619,12 @@ export function SalesAdmin() {
                   <TableRow>
                     <TableHead className="w-10">#</TableHead>
                     <TableHead>Vendedor</TableHead>
+                    <TableHead className="text-right">Qtd vendas</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rankingVendedores.map(({ nome, total }, idx) => (
+                  {rankingVendedores.map(({ nome, total, qtd }, idx) => (
                     <TableRow key={nome}>
                       <TableCell className="font-medium">
                         {idx === 0 && <span aria-hidden>🥇</span>}
@@ -605,6 +633,7 @@ export function SalesAdmin() {
                         {idx > 2 && idx + 1}
                       </TableCell>
                       <TableCell>{nome}</TableCell>
+                      <TableCell className="text-right">{qtd}</TableCell>
                       <TableCell className="text-right">
                         R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
