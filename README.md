@@ -77,6 +77,21 @@ O endpoint `POST /api/enviar-email` aceita JSON: `{ "destinatarios": ["email@...
 
 5. Configure o Database Webhook no Supabase para a tabela `versoes_SAAS_Agentes` (evento INSERT), apontando para o endpoint do seu Backend.
 
+## Deploy na Vercel (frontend + API)
+
+O projeto inclui funções serverless em `api/` que rodam na Vercel junto com o frontend. Configure em **Settings → Environment Variables**:
+
+**Frontend (todas as envs):**
+- `VITE_SUPABASE_URL` – URL do Supabase
+- `VITE_SUPABASE_ANON_KEY` – Anon key pública
+- `VITE_BACKEND_URL` – URL do deploy (ex: `https://seu-projeto.vercel.app`)
+- `VITE_SALES_ALLOWED_USER_ID` (opcional)
+
+**API (backend serverless):**
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_KEY`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME` – Brevo
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` – Supabase
+- `N8N_URL`, `N8N_WORKFLOW_ID`, `N8N_API_KEY` (opcional, para Nova atualização)
+
 ## Scripts
 
 - `npm run dev` - Desenvolvimento

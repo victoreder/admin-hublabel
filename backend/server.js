@@ -17,6 +17,9 @@ const {
   SMTP_FROM_NAME,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
+  N8N_URL,
+  N8N_WORKFLOW_ID,
+  N8N_API_KEY,
 } = process.env;
 
 let supabaseClient = null;
@@ -112,6 +115,67 @@ app.get("/api/inserir-anon-key-info", async (req, res) => {
   } catch (err) {
     console.error("Erro ao carregar info anon key.");
     res.status(500).json({ error: "Erro ao carregar." });
+  }
+});
+
+// Busca workflow do n8n e extrai URL de download (link do artefato no workflow)
+app.get("/api/n8n/workflow-link", async (req, res) => {
+  try {
+    if (!N8N_URL || !N8N_WORKFLOW_ID || !N8N_API_KEY) {
+      return res.status(500).json({
+        error: "Backend não configurado para n8n. Defina N8N_URL, N8N_WORKFLOW_ID e N8N_API_KEY no .env.",
+      });
+    }
+    const baseUrl = N8N_URL.replace(/\/$/, "");
+    const url = `${baseUrl}/api/v1/workflows/${N8N_WORKFLOW_ID}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-N8N-API-KEY": N8N_API_KEY,
+      },
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("n8n API error:", response.status, errText);
+      return res.status(response.status).json({
+        error: `n8n retornou ${response.status}. Verifique URL, workflow ID e API key.`,
+      });
+    }
+    const workflow = await response.json();
+
+    // Extrai a primeira URL http(s) encontrada no JSON (excluindo URLs do próprio n8n)
+    function findUrl(obj, seen = new WeakSet()) {
+      if (obj === null) return null;
+      if (typeof obj === "string") {
+        if (/^https?:\/\/[^\s]+$/.test(obj) && !obj.includes("n8n")) return obj;
+        return null;
+      }
+      if (typeof obj !== "object") return null;
+      if (seen.has(obj)) return null;
+      try {
+        seen.add(obj);
+      } catch {
+        return null;
+      }
+      if (Array.isArray(obj)) {
+        for (const v of obj) {
+          const u = findUrl(v, seen);
+          if (u) return u;
+        }
+        return null;
+      }
+      for (const v of Object.values(obj)) {
+        const u = findUrl(v, seen);
+        if (u) return u;
+      }
+      return null;
+    }
+
+    const link = findUrl(workflow);
+    res.status(200).json({ link: link || null });
+  } catch (err) {
+    console.error("Erro ao buscar workflow n8n:", err);
+    res.status(500).json({ error: "Falha ao buscar link do n8n." });
   }
 });
 

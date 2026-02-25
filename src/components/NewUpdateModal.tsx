@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Upload, X, ImageIcon } from "lucide-react";
+import { Upload, X, ImageIcon, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,7 @@ interface NewUpdateModalProps {
 export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [loadingN8n, setLoadingN8n] = useState(false);
   const [uploadUrl, setUploadUrl] = useState<string>("");
   const [imageUrl, setImageUrl] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +78,34 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
   const removeUpload = () => {
     setUploadUrl("");
     setValue("linkVersao", "");
+  };
+
+  const handlePullFromN8n = async () => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    if (!backendUrl) {
+      toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
+      return;
+    }
+    setLoadingN8n(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/n8n/workflow-link`);
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Erro ao puxar do n8n.");
+        return;
+      }
+      if (data.link) {
+        setUploadUrl(data.link);
+        setValue("linkVersao", data.link);
+        toast.success("Link obtido do n8n.");
+      } else {
+        toast.info("Nenhum link encontrado no workflow.");
+      }
+    } catch {
+      toast.error("Falha ao conectar com o backend.");
+    } finally {
+      setLoadingN8n(false);
+    }
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,8 +207,15 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
             )}
           </div>
           <div>
-            <Label htmlFor="linkVersao">Ou link manual para download</Label>
-            <Input id="linkVersao" placeholder="https://..." {...register("linkVersao")} />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePullFromN8n}
+              disabled={loadingN8n}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {loadingN8n ? "Puxando..." : "Puxar do n8n"}
+            </Button>
           </div>
           <div>
             <Label htmlFor="titulo">Título da entrada (opcional)</Label>
