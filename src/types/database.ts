@@ -46,6 +46,16 @@ export interface Venda {
   created_at?: string;
 }
 
+export interface VendaACobrar {
+  id: string;
+  valor: number;
+  vendedor: string;
+  data_prevista_cobranca: string;
+  descricao?: string;
+  percentual_taxa_checkout?: number;
+  created_at?: string;
+}
+
 export interface VersaoSAASAgente {
   id: string;
   nomeVersao: string;
@@ -87,5 +97,6 @@ export interface Instalacao {
   acessos?: string | null;
   status: StatusInstalacao;
   prioridade?: PrioridadeInstalacao;
+  coletar_acessos?: boolean;
   created_at?: string;
 }

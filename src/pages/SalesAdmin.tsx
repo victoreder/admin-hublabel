@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, MoreVertical, Pencil, RotateCcw } from "lucide-react";
+import { Plus, MoreVertical, Pencil, RotateCcw, Wallet, CheckCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { format, startOfDay, startOfMonth, endOfMonth, subDays } from "date-fns";
@@ -28,6 +28,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -47,7 +48,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Venda, Vendedor } from "@/types/database";
+import type { Venda, Vendedor, VendaACobrar } from "@/types/database";
 
 function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", {
@@ -138,6 +139,18 @@ export function SalesAdmin() {
   const [dateRangeTo, setDateRangeTo] = useState(() =>
     format(endOfMonth(now), "yyyy-MM-dd")
   );
+  const [vendasACobrar, setVendasACobrar] = useState<VendaACobrar[]>([]);
+  const [newCobrancaOpen, setNewCobrancaOpen] = useState(false);
+  const [cobrancaValor, setCobrancaValor] = useState("");
+  const [cobrancaData, setCobrancaData] = useState(() =>
+    format(new Date(), "yyyy-MM-dd")
+  );
+  const [cobrancaVendedorId, setCobrancaVendedorId] = useState("");
+  const [cobrancaDescricao, setCobrancaDescricao] = useState("");
+  const [cobrancaTaxa, setCobrancaTaxa] = useState("");
+  const [marcandoPagoId, setMarcandoPagoId] = useState<string | null>(null);
+  const ITENS_POR_PAGINA_COBRANCA = 10;
+  const [paginaCobranca, setPaginaCobranca] = useState(1);
 
   const { fromStr: filterFrom, toStr: filterTo } = getFilterBounds(
     dateFilterMode,
@@ -156,6 +169,16 @@ export function SalesAdmin() {
     if (!key) return false;
     return key >= filterFrom && key <= filterTo;
   });
+
+  const ITENS_POR_PAGINA = 10;
+  const [paginaLista, setPaginaLista] = useState(1);
+  const totalPaginas = Math.max(1, Math.ceil(vendasFiltradas.length / ITENS_POR_PAGINA));
+  const vendasPaginadas = vendasFiltradas.slice(
+    (paginaLista - 1) * ITENS_POR_PAGINA,
+    paginaLista * ITENS_POR_PAGINA
+  );
+  const inicioItem = vendasFiltradas.length === 0 ? 0 : (paginaLista - 1) * ITENS_POR_PAGINA + 1;
+  const fimItem = Math.min(paginaLista * ITENS_POR_PAGINA, vendasFiltradas.length);
 
   const faturamentoLiquido = (valor: number, percentual: number) =>
     valor * (1 - percentual / 100);
@@ -190,8 +213,33 @@ export function SalesAdmin() {
     }
   };
 
+  const fetchVendasACobrar = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("vendas_a_cobrar")
+        .select("*")
+        .order("data_prevista_cobranca", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setVendasACobrar((data as VendaACobrar[]) ?? []);
+    } catch {
+      setVendasACobrar([]);
+    }
+  };
+
+  const totalPaginasCobranca = Math.max(1, Math.ceil(vendasACobrar.length / ITENS_POR_PAGINA_COBRANCA));
+  const vendasACobrarPaginadas = vendasACobrar.slice(
+    (paginaCobranca - 1) * ITENS_POR_PAGINA_COBRANCA,
+    paginaCobranca * ITENS_POR_PAGINA_COBRANCA
+  );
+  const inicioItemCobranca = vendasACobrar.length === 0 ? 0 : (paginaCobranca - 1) * ITENS_POR_PAGINA_COBRANCA + 1;
+  const fimItemCobranca = Math.min(paginaCobranca * ITENS_POR_PAGINA_COBRANCA, vendasACobrar.length);
+  const totalPendente = vendasACobrar.reduce((s, c) => s + Number(c.valor), 0);
+
   useEffect(() => {
     fetchVendas();
+    fetchVendedores();
+    fetchVendasACobrar();
   }, []);
 
   useEffect(() => {
@@ -204,6 +252,18 @@ export function SalesAdmin() {
   useEffect(() => {
     if (editVenda) fetchVendedores();
   }, [editVenda]);
+
+  useEffect(() => {
+    setPaginaLista(1);
+  }, [filterFrom, filterTo]);
+
+  useEffect(() => {
+    setPaginaLista((p) => Math.min(p, totalPaginas));
+  }, [totalPaginas]);
+
+  useEffect(() => {
+    setPaginaCobranca((p) => Math.min(p, totalPaginasCobranca));
+  }, [totalPaginasCobranca]);
 
   const totalVendas = vendasFiltradas.reduce((s, v) => s + Number(v.valor), 0);
   const totalLiquido = vendasFiltradas.reduce(
@@ -329,6 +389,72 @@ export function SalesAdmin() {
       toast.success("Venda marcada como reembolsada.");
     } catch {
       toast.error("Erro ao reembolsar.");
+    }
+  };
+
+  const handleCreateCobranca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = parseBRLInput(cobrancaValor);
+    if (v <= 0) {
+      toast.error("Valor inválido.");
+      return;
+    }
+    const vendedor = vendedores.find((x) => x.id === cobrancaVendedorId);
+    if (!cobrancaVendedorId || !vendedor) {
+      toast.error("Selecione o vendedor.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const taxa = Math.min(100, Math.max(0, parseFloat(cobrancaTaxa.replace(",", ".")) || 0));
+      const { error } = await supabase.from("vendas_a_cobrar").insert({
+        valor: v,
+        vendedor: vendedor.nome,
+        data_prevista_cobranca: cobrancaData,
+        descricao: cobrancaDescricao.trim() || null,
+        percentual_taxa_checkout: taxa,
+      });
+      if (error) throw error;
+      setCobrancaValor("");
+      setCobrancaData(format(new Date(), "yyyy-MM-dd"));
+      setCobrancaVendedorId("");
+      setCobrancaDescricao("");
+      setCobrancaTaxa("");
+      setNewCobrancaOpen(false);
+      fetchVendasACobrar();
+      toast.success("Cobrança adicionada.");
+    } catch {
+      toast.error("Erro ao adicionar cobrança.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMarcarComoPago = async (c: VendaACobrar) => {
+    setMarcandoPagoId(c.id);
+    try {
+      const dataPagamento = format(new Date(), "yyyy-MM-dd");
+      const taxaCobranca = Number(c.percentual_taxa_checkout ?? 0);
+      const { error: errInsert } = await supabase.from("vendas").insert({
+        valor: Number(c.valor),
+        vendedor: c.vendedor,
+        data_venda: dataPagamento,
+        percentual_taxa_checkout: taxaCobranca,
+        status: "ativa",
+      });
+      if (errInsert) throw errInsert;
+      const { error: errDelete } = await supabase
+        .from("vendas_a_cobrar")
+        .delete()
+        .eq("id", c.id);
+      if (errDelete) throw errDelete;
+      fetchVendas();
+      fetchVendasACobrar();
+      toast.success("Marcado como pago e registrado nas vendas.");
+    } catch {
+      toast.error("Erro ao marcar como pago.");
+    } finally {
+      setMarcandoPagoId(null);
     }
   };
 
@@ -501,20 +627,21 @@ export function SalesAdmin() {
           ) : vendas.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">Nenhuma venda registrada.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Vendedor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="text-right">Taxa %</TableHead>
-                  <TableHead className="text-right">Líquido</TableHead>
-                  <TableHead className="w-10" aria-label="Ações" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {vendasFiltradas.map((v) => {
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Vendedor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead className="text-right">Taxa %</TableHead>
+                    <TableHead className="text-right">Líquido</TableHead>
+                    <TableHead className="w-10" aria-label="Ações" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vendasPaginadas.map((v) => {
                   const pct = Number(v.percentual_taxa_checkout ?? 0);
                   const liq = faturamentoLiquido(Number(v.valor), pct);
                   const isReembolsada = v.status === "reembolsada";
@@ -568,12 +695,246 @@ export function SalesAdmin() {
                       </TableCell>
                     </TableRow>
                   );
-                })}
-              </TableBody>
-            </Table>
+                  })}
+                </TableBody>
+              </Table>
+              {vendasFiltradas.length > ITENS_POR_PAGINA && (
+                <div className="flex items-center justify-between gap-4 mt-4 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    Mostrando {inicioItem}-{fimItem} de {vendasFiltradas.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaginaLista((p) => Math.max(1, p - 1))}
+                      disabled={paginaLista <= 1}
+                    >
+                      Anterior
+                    </Button>
+                    <span className="text-sm text-muted-foreground min-w-[80px] text-center">
+                      Página {paginaLista} de {totalPaginas}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaginaLista((p) => Math.min(totalPaginas, p + 1))}
+                      disabled={paginaLista >= totalPaginas}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+
+      {/* Vendas a cobrar */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-muted-foreground" aria-hidden />
+            Vendas a cobrar
+          </CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCobrancaData(format(new Date(), "yyyy-MM-dd"));
+              setCobrancaValor("");
+              setCobrancaVendedorId("");
+              setCobrancaDescricao("");
+              setCobrancaTaxa("");
+              fetchVendedores();
+              setNewCobrancaOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar cobrança
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {vendasACobrar.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6">Nenhuma cobrança pendente.</p>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data a cobrar</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Vendedor</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead className="text-right">Taxa %</TableHead>
+                    <TableHead className="w-10" aria-label="Ações" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vendasACobrarPaginadas.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        {format(parseDateOnly(c.data_prevista_cobranca), "dd/MM/yyyy", { locale: ptBR })}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={c.descricao ?? ""}>
+                        {c.descricao || "—"}
+                      </TableCell>
+                      <TableCell>{c.vendedor}</TableCell>
+                      <TableCell className="text-right">
+                        R$ {Number(c.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">{Number(c.percentual_taxa_checkout ?? 0)}%</TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label="Ações"
+                              disabled={marcandoPagoId === c.id}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleMarcarComoPago(c)}
+                              disabled={marcandoPagoId === c.id}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              {marcandoPagoId === c.id ? "Registrando..." : "Marcar como pago"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="bg-amber-100 dark:bg-amber-950/50">
+                    <TableCell colSpan={3} className="text-right font-medium text-amber-900 dark:text-amber-200">
+                      Total pendente
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-amber-900 dark:text-amber-200">
+                      R$ {totalPendente.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell colSpan={2} />
+                  </TableRow>
+                </TableFooter>
+              </Table>
+              {vendasACobrar.length > ITENS_POR_PAGINA_COBRANCA && (
+                <div className="flex items-center justify-between gap-4 mt-4 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    Mostrando {inicioItemCobranca}-{fimItemCobranca} de {vendasACobrar.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaginaCobranca((p) => Math.max(1, p - 1))}
+                      disabled={paginaCobranca <= 1}
+                    >
+                      Anterior
+                    </Button>
+                    <span className="text-sm text-muted-foreground min-w-[80px] text-center">
+                      Página {paginaCobranca} de {totalPaginasCobranca}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPaginaCobranca((p) => Math.min(totalPaginasCobranca, p + 1))}
+                      disabled={paginaCobranca >= totalPaginasCobranca}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={newCobrancaOpen} onOpenChange={(o) => !o && setNewCobrancaOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adicionar cobrança</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateCobranca} className="space-y-4">
+            <div>
+              <Label htmlFor="cobranca_data">Data a cobrar</Label>
+              <Input
+                id="cobranca_data"
+                type="date"
+                value={cobrancaData}
+                onChange={(e) => setCobrancaData(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cobranca_valor">Valor (R$)</Label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-muted-foreground pointer-events-none">R$</span>
+                <Input
+                  id="cobranca_valor"
+                  value={cobrancaValor}
+                  onChange={(e) => setCobrancaValor(sanitizeBRLInput(e.target.value))}
+                  onBlur={() => {
+                    const v = parseBRLInput(cobrancaValor);
+                    if (cobrancaValor.trim()) setCobrancaValor(v > 0 ? formatBRL(v) : "0,00");
+                  }}
+                  placeholder="0,00"
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="cobranca_taxa">Taxa checkout (%)</Label>
+              <Input
+                id="cobranca_taxa"
+                type="text"
+                inputMode="decimal"
+                value={cobrancaTaxa}
+                onChange={(e) => setCobrancaTaxa(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cobranca_descricao">Descrição</Label>
+              <Input
+                id="cobranca_descricao"
+                value={cobrancaDescricao}
+                onChange={(e) => setCobrancaDescricao(e.target.value)}
+                placeholder="Ex.: Pedido #123, boleto vencimento..."
+              />
+            </div>
+            <div>
+              <Label>Vendedor</Label>
+              <Select value={cobrancaVendedorId} onValueChange={setCobrancaVendedorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o vendedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendedores.map((vend) => (
+                    <SelectItem key={vend.id} value={vend.id}>
+                      {vend.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setNewCobrancaOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={newSaleOpen} onOpenChange={(o) => !o && setNewSaleOpen(false)}>
         <DialogContent>

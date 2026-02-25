@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -106,7 +107,7 @@ export function InstalacoesAdmin() {
     fetchInstalacoes();
   }, [fetchInstalacoes]);
 
-  const handleCreate = async (payload: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao }) => {
+  const handleCreate = async (payload: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => {
     try {
       const { error } = await supabase.from("instalacoes").insert({
         telefone: payload.telefone || null,
@@ -114,6 +115,7 @@ export function InstalacoesAdmin() {
         acessos: payload.acessos || null,
         status: "aguardando",
         prioridade: payload.prioridade || "normal",
+        coletar_acessos: payload.coletar_acessos ?? false,
       });
       if (error) throw error;
       setModalOpen(false);
@@ -209,7 +211,7 @@ export function InstalacoesAdmin() {
   }, []);
 
   const handleUpdateInstalacao = useCallback(
-    async (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao }) => {
+    async (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => {
       try {
         const payload = {
           telefone: data.telefone ?? null,
@@ -217,19 +219,20 @@ export function InstalacoesAdmin() {
           acessos: data.acessos ?? null,
           prioridade: data.prioridade ?? "normal",
           ...(data.status != null && { status: data.status }),
+          ...(data.coletar_acessos !== undefined && { coletar_acessos: data.coletar_acessos }),
         };
         const { error } = await supabase.from("instalacoes").update(payload).eq("id", id);
         if (error) throw error;
         setInstalacoes((prev) =>
           prev.map((i) =>
             i.id === id
-              ? { ...i, ...payload, status: data.status ?? i.status }
+              ? { ...i, ...payload, status: data.status ?? i.status, coletar_acessos: data.coletar_acessos ?? i.coletar_acessos }
               : i
           )
         );
         setSelectedInstalacao((prev) =>
           prev?.id === id
-            ? { ...prev, ...payload, status: data.status ?? prev.status }
+            ? { ...prev, ...payload, status: data.status ?? prev.status, coletar_acessos: data.coletar_acessos ?? prev.coletar_acessos }
             : prev
         );
         toast.success("Instalação atualizada.");
@@ -514,9 +517,14 @@ function KanbanCard({ instalacao, isDragging, onCardClick, onDragStart, onDragEn
                 {dataCriacao}
               </span>
               {instalacao.prioridade === "urgente" && (
-                <span className="inline-flex items-center gap-1 rounded border border-amber-400/60 bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-300 font-medium">
+                <span className="inline-flex items-center gap-1 rounded border border-red-400/60 bg-red-500/15 px-1.5 py-0.5 text-red-700 dark:text-red-300 font-medium">
                   <AlertCircle className="h-3 w-3" />
                   Urgente
+                </span>
+              )}
+              {instalacao.coletar_acessos && (
+                <span className="inline-flex items-center rounded border border-amber-400/60 bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-300 font-medium">
+                  Coletar Acessos
                 </span>
               )}
             </div>
@@ -554,7 +562,7 @@ interface InstalacaoDetailModalProps {
   open: boolean;
   onClose: () => void;
   onCopy: (instalacao: Instalacao) => void;
-  onUpdate: (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao }) => Promise<void>;
+  onUpdate: (id: string, data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; status?: StatusInstalacao; coletar_acessos?: boolean }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -565,6 +573,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
   const [acessos, setAcessos] = useState("");
   const [prioridade, setPrioridade] = useState<PrioridadeInstalacao>("normal");
   const [status, setStatus] = useState<StatusInstalacao>("aguardando");
+  const [coletarAcessos, setColetarAcessos] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -574,6 +583,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
       setAcessos(instalacao.acessos ?? "");
       setPrioridade((instalacao.prioridade as PrioridadeInstalacao) ?? "normal");
       setStatus(instalacao.status);
+      setColetarAcessos(instalacao.coletar_acessos ?? false);
       setEditing(false);
     }
   }, [instalacao]);
@@ -597,6 +607,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
         acessos: acessos.trim() || undefined,
         prioridade,
         status,
+        coletar_acessos: coletarAcessos,
       });
       setEditing(false);
     } finally {
@@ -619,6 +630,9 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
             <Globe className="h-5 w-5 text-muted-foreground" />
             {editing ? "Editar instalação" : instalacao.dominio || "Instalação"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {editing ? "Formulário para editar telefone, domínio e acessos da instalação." : "Detalhes da instalação."}
+          </DialogDescription>
         </DialogHeader>
         {editing ? (
           <form onSubmit={handleSave} className="space-y-4">
@@ -668,6 +682,18 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
                 <option value="urgente">Urgente</option>
               </select>
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="detail-coletar-acessos"
+                checked={coletarAcessos}
+                onChange={(e) => setColetarAcessos(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <Label htmlFor="detail-coletar-acessos" className="font-normal cursor-pointer">
+                Coletar Acessos
+              </Label>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="detail-acessos">Acessos</Label>
               <Textarea
@@ -710,7 +736,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
                 <span className="text-muted-foreground">Prioridade</span>
                 <p className="font-medium flex items-center gap-1">
                   {instalacao.prioridade === "urgente" && (
-                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                    <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
                   )}
                   {PRIORIDADE_LABEL[instalacao.prioridade ?? "normal"]}
                 </p>
@@ -723,6 +749,13 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
                 <span className="text-muted-foreground">Criado em</span>
                 <p className="font-medium">{dataCriacao}</p>
               </div>
+              {instalacao.coletar_acessos && (
+                <div className="col-span-2">
+                  <span className="inline-flex items-center rounded border border-amber-400/60 bg-amber-500/15 px-2 py-1 text-amber-700 dark:text-amber-300 text-sm font-medium">
+                    Coletar Acessos
+                  </span>
+                </div>
+              )}
             </div>
             {instalacao.acessos && (
               <div className="space-y-1">
@@ -758,7 +791,7 @@ function InstalacaoDetailModal({ instalacao, open, onClose, onCopy, onUpdate, on
 interface NewInstalacaoModalProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao }) => void;
+  onSubmit: (data: { telefone?: string; dominio: string; acessos?: string; prioridade?: PrioridadeInstalacao; coletar_acessos?: boolean }) => void;
 }
 
 function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps) {
@@ -766,6 +799,7 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
   const [dominio, setDominio] = useState("");
   const [acessos, setAcessos] = useState("");
   const [prioridade, setPrioridade] = useState<PrioridadeInstalacao>("normal");
+  const [coletarAcessos, setColetarAcessos] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
@@ -773,6 +807,7 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
     setDominio("");
     setAcessos("");
     setPrioridade("normal");
+    setColetarAcessos(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -789,6 +824,7 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
         dominio: d,
         acessos: acessos.trim() || undefined,
         prioridade,
+        coletar_acessos: coletarAcessos,
       });
       reset();
     } finally {
@@ -801,6 +837,9 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova instalação</DialogTitle>
+          <DialogDescription className="sr-only">
+            Formulário para cadastrar nova instalação: telefone, domínio, prioridade e acessos.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -833,6 +872,18 @@ function NewInstalacaoModal({ open, onClose, onSubmit }: NewInstalacaoModalProps
               <option value="normal">Normal</option>
               <option value="urgente">Urgente</option>
             </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="coletar-acessos"
+              checked={coletarAcessos}
+              onChange={(e) => setColetarAcessos(e.target.checked)}
+              className="h-4 w-4 rounded border-input"
+            />
+            <Label htmlFor="coletar-acessos" className="font-normal cursor-pointer">
+              Coletar Acessos
+            </Label>
           </div>
           <div className="space-y-2">
             <Label htmlFor="acessos">Acessos</Label>
