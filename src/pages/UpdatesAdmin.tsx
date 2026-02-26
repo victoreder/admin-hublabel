@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Package, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { getBackendUrl } from "@/lib/utils";
 
 /** Extrai bucket e path de uma URL do Supabase Storage (object/public). Retorna null se não for do nosso Storage. */
 function parseStorageUrl(url: string | null | undefined): { bucket: string; path: string } | null {
@@ -39,6 +40,8 @@ export function UpdatesAdmin() {
   const [editUpdate, setEditUpdate] = useState<VersaoSAASAgente | null>(null);
   const [deleteUpdate, setDeleteUpdate] = useState<VersaoSAASAgente | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [atualizarTodos, setAtualizarTodos] = useState<VersaoSAASAgente | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
 
   const fetchUpdates = async () => {
     setLoading(true);
@@ -73,10 +76,52 @@ export function UpdatesAdmin() {
     fetchUpdates();
   };
 
+  const handleAtualizarTodosConfirm = async () => {
+    if (!atualizarTodos?.id) return;
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) {
+      toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
+      return;
+    }
+    setAtualizando(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/atualizar-todos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId: atualizarTodos.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Erro ${res.status}`);
+      }
+      setAtualizarTodos(null);
+      fetchUpdates();
+      toast.success(data?.message ?? "Atualizar todos iniciado com sucesso.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao iniciar Atualizar todos.");
+    } finally {
+      setAtualizando(false);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!deleteUpdate?.id) return;
+    const backendUrl = getBackendUrl();
     setDeleting(true);
     try {
+      if (backendUrl) {
+        const res = await fetch(`${backendUrl}/api/excluir-atualizacao`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ versionId: deleteUpdate.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error ?? `Erro ${res.status}`);
+        setDeleteUpdate(null);
+        fetchUpdates();
+        toast.success(data?.message ?? "Atualização excluída.");
+        return;
+      }
       const storageRef = parseStorageUrl(deleteUpdate.linkVersao);
       if (storageRef) {
         const { error: storageError } = await supabase.storage
@@ -142,6 +187,7 @@ export function UpdatesAdmin() {
               updates={updates}
               onEdit={(u) => setEditUpdate(u)}
               onDelete={(u) => setDeleteUpdate(u)}
+              onAtualizarTodos={(u) => setAtualizarTodos(u)}
             />
           )}
         </CardContent>
@@ -159,6 +205,26 @@ export function UpdatesAdmin() {
         onSuccess={handleEditSuccess}
         update={editUpdate}
       />
+
+      <Dialog open={!!atualizarTodos} onOpenChange={(o) => !o && setAtualizarTodos(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Atualizar todos</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Enviar a versão <strong>{atualizarTodos?.nomeVersao}</strong> para todos os clientes com anon key
+            preenchido? O processo envia 1 cliente por minuto e envia email após cada atualização bem-sucedida.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAtualizarTodos(null)} disabled={atualizando}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAtualizarTodosConfirm} disabled={atualizando}>
+              {atualizando ? "Iniciando..." : "Atualizar todos"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteUpdate} onOpenChange={(o) => !o && setDeleteUpdate(null)}>
         <DialogContent className="max-w-sm">

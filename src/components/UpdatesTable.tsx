@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,9 +22,10 @@ interface UpdatesTableProps {
   updates: VersaoSAASAgente[];
   onEdit?: (update: VersaoSAASAgente) => void;
   onDelete?: (update: VersaoSAASAgente) => void;
+  onAtualizarTodos?: (update: VersaoSAASAgente) => void;
 }
 
-export function UpdatesTable({ updates, onEdit, onDelete }: UpdatesTableProps) {
+export function UpdatesTable({ updates, onEdit, onDelete, onAtualizarTodos }: UpdatesTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -77,6 +78,14 @@ export function UpdatesTable({ updates, onEdit, onDelete }: UpdatesTableProps) {
                         Excluir
                       </DropdownMenuItem>
                     )}
+                    {onAtualizarTodos &&
+                      !u.atualizou_todos &&
+                      u.linkVersao && (
+                        <DropdownMenuItem onClick={() => onAtualizarTodos(u)}>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Atualizar todos
+                        </DropdownMenuItem>
+                      )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>

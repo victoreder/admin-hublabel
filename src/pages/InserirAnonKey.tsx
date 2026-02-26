@@ -41,7 +41,7 @@ export function InserirAnonKey() {
         return res.json();
       })
       .then((data) => {
-        const nome = data?.nomeSoftware ?? data?.nome_software ?? "";
+        const nome = data?.nomeSoftware ?? "";
         const dominio = data?.dominio ?? "";
         const supabaseUrl = data?.supabaseUrl ?? "";
         setClientInfo({

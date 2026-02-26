@@ -44,6 +44,16 @@ const DRAG_TYPE = "application/x-instalacao-id";
 const PRAZO_ENTREGA_HORAS = 24;
 const BUCKET_INSTALACOES = "versoes";
 
+/** Extrai bucket e path de uma URL do Supabase Storage (object/public). */
+function parseStorageUrl(url: string | null | undefined): { bucket: string; path: string } | null {
+  if (!url || typeof url !== "string") return null;
+  const match = url.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+  if (!match) return null;
+  const bucket = match[1];
+  const path = decodeURIComponent(match[2]);
+  return bucket && path ? { bucket, path } : null;
+}
+
 const PRIORIDADE_LABEL: Record<PrioridadeInstalacao, string> = {
   urgente: "Urgente",
   normal: "Normal",
@@ -182,6 +192,19 @@ export function InstalacoesAdmin() {
           );
         }
         toast.success(`Movido para ${STATUS_LABEL[newStatus]}`);
+        if (newStatus === "finalizado" && instalacao?.arquivos?.length) {
+          const pathsToRemove: { bucket: string; path: string }[] = [];
+          for (const arq of instalacao.arquivos) {
+            const ref = parseStorageUrl(arq.url);
+            if (ref) pathsToRemove.push(ref);
+          }
+          if (pathsToRemove.length > 0) {
+            for (const { bucket, path } of pathsToRemove) {
+              const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
+              if (storageError) console.warn("Storage: arquivo não removido:", path, storageError.message);
+            }
+          }
+        }
         if (newStatus === "finalizado" && instalacao && getBackendUrl()) {
           try {
             const { data: { session } } = await supabase.auth.getSession();

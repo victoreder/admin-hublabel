@@ -121,7 +121,7 @@ export function NewUpdateModal({ open, onClose, onSuccess }: NewUpdateModalProps
           .maybeSingle();
         if (!error && data && typeof data === "object") {
           const row = data as Record<string, unknown>;
-          const v = row.nomeVersao ?? row.nome_versao;
+          const v = row.nomeVersao;
           if (v != null && String(v).trim() !== "") {
             const ver = String(v).trim();
             setLastVersion(ver);

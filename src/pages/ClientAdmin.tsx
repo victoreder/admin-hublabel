@@ -11,8 +11,6 @@ import { ClientDetails } from "@/components/ClientDetails";
 import { NewClientModal } from "@/components/NewClientModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { UsuarioSAASAgente, VersaoSAASAgente } from "@/types/database";
-import { getBackendUrl } from "@/lib/utils";
-import type { UpdateType } from "@/components/UpdateConfirmDialog";
 
 export function ClientAdmin() {
   const [clients, setClients] = useState<UsuarioSAASAgente[]>([]);
@@ -91,30 +89,6 @@ export function ClientAdmin() {
     });
   }, [clients, latestVersion, filterNuncaInstalado, filterSemAnonKey, filterUltimaVersao]);
 
-  const handleNotifyUpdate = async (client: UsuarioSAASAgente, tipo: UpdateType) => {
-    const backendUrl = getBackendUrl();
-    if (!backendUrl) {
-      toast.error("Backend não configurado. Defina VITE_BACKEND_URL.");
-      return;
-    }
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${backendUrl}/api/notificar-cliente`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
-        },
-        body: JSON.stringify({ clientId: client.id, tipo }),
-      });
-      if (!res.ok) throw new Error("Falha ao notificar");
-      const tipoLabel = tipo === "tudo" ? "Atualização completa" : tipo === "sql" ? "SQL" : "App";
-      toast.success(`${tipoLabel} enviada para ${client.nomeSoftware}`);
-    } catch {
-      toast.error("Erro ao enviar notificação. Verifique o Backend.");
-    }
-  };
-
   const hasActiveFilter = filterNuncaInstalado || filterSemAnonKey || filterUltimaVersao;
 
   return (
@@ -190,7 +164,6 @@ export function ClientAdmin() {
               clients={filteredClients}
               latestVersion={latestVersion}
               onViewDetails={setDetailsClient}
-              onNotifyUpdate={handleNotifyUpdate}
               onClientUpdated={() => fetchClients(search)}
             />
           )}

@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Eye, RefreshCw, Mail, KeyRound, Check, TimerOff, Timer, Ban, ExternalLink } from "lucide-react";
 import { AccessDialog } from "@/components/AccessDialog";
-import { UpdateConfirmDialog, type UpdateType } from "@/components/UpdateConfirmDialog";
+import { AtualizarClienteDialog } from "@/components/AtualizarClienteDialog";
 import { AnonKeyDialog } from "@/components/AnonKeyDialog";
 import { getBackendUrl } from "@/lib/utils";
 import type { UsuarioSAASAgente, ModeloEmail } from "@/types/database";
@@ -43,7 +43,6 @@ interface ClientTableProps {
   clients: UsuarioSAASAgente[];
   latestVersion: string | null;
   onViewDetails: (client: UsuarioSAASAgente) => void;
-  onNotifyUpdate: (client: UsuarioSAASAgente, tipo: UpdateType) => void;
   onClientUpdated?: () => void;
 }
 
@@ -51,7 +50,6 @@ export function ClientTable({
   clients,
   latestVersion,
   onViewDetails,
-  onNotifyUpdate,
   onClientUpdated,
 }: ClientTableProps) {
   const [modelos, setModelos] = useState<ModeloEmail[]>([]);
@@ -171,8 +169,9 @@ export function ClientTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" side="bottom">
                     <DropdownMenuItem
-                      disabled={!client.acessoAtualizacao}
-                      onClick={() => client.acessoAtualizacao && setUpdateClient(client)}
+                      disabled={missingAnonKey}
+                      title={missingAnonKey ? "Preencha a Anon Key primeiro" : undefined}
+                      onClick={() => !missingAnonKey && setUpdateClient(client)}
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Atualizar
@@ -299,9 +298,9 @@ export function ClientTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      disabled={!client.acessoAtualizacao}
-                      title={!client.acessoAtualizacao ? "Cliente sem acesso à atualização" : undefined}
-                      onClick={() => client.acessoAtualizacao && setUpdateClient(client)}
+                      disabled={missingAnonKey}
+                      title={missingAnonKey ? "Preencha a Anon Key primeiro" : undefined}
+                      onClick={() => !missingAnonKey && setUpdateClient(client)}
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Atualizar
@@ -360,14 +359,11 @@ export function ClientTable({
       </TableBody>
     </Table>
     <AccessDialog client={accessClient} open={!!accessClient} onClose={() => setAccessClient(null)} />
-    <UpdateConfirmDialog
+    <AtualizarClienteDialog
       client={updateClient}
       open={!!updateClient}
       onClose={() => setUpdateClient(null)}
-      onConfirm={(c, tipo) => {
-        onNotifyUpdate(c, tipo);
-        setUpdateClient(null);
-      }}
+      onSuccess={onClientUpdated}
     />
     <AnonKeyDialog
       client={anonKeyClient}

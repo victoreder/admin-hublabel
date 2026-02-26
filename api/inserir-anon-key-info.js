@@ -25,7 +25,7 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Link inválido ou expirado." });
     }
     const row = data;
-    const nome = row.nomeSoftware ?? row.nome_software ?? row.nomesoftware ?? "";
+    const nome = row.nomeSoftware ?? "";
     const dominio = row.dominio ?? "";
     const supabaseUrl = row.supabase_url ?? "";
     res.status(200).json({ nomeSoftware: nome, dominio, supabaseUrl });

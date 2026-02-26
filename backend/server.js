@@ -187,6 +187,40 @@ function buildEmailInstalacaoFinalizada(telefone, dominio) {
   return buildEmailShell(inner);
 }
 
+const LINK_SUPORTE_WHATSAPP = "https://wa.me/554891034326";
+
+function nl2br(text) {
+  if (!text || typeof text !== "string") return "";
+  return escapeHtml(text).replace(/\n/g, "<br />");
+}
+
+function buildEmailAtualizado(nomeSoftware, versao, correcoes, implementacoes) {
+  const nome = escapeHtml(nomeSoftware || "seu software");
+  const ver = escapeHtml(versao || "—");
+  const blocCorrecoes =
+    correcoes && String(correcoes).trim()
+      ? `<div style="background:#f4f4f5;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid ${emailPrimaryColor};">
+  <p style="color:#71717a;font-size:13px;margin:0 0 8px 0;font-weight:600;">Correções</p>
+  <p style="color:#3f3f46;font-size:14px;line-height:1.6;margin:0;">${nl2br(correcoes)}</p>
+</div>`
+      : "";
+  const blocImplementacoes =
+    implementacoes && String(implementacoes).trim()
+      ? `<div style="background:#f4f4f5;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid #22c55e;">
+  <p style="color:#71717a;font-size:13px;margin:0 0 8px 0;font-weight:600;">Implementações</p>
+  <p style="color:#3f3f46;font-size:14px;line-height:1.6;margin:0;">${nl2br(implementacoes)}</p>
+</div>`
+      : "";
+  const inner = `
+    <h1 style="color:${emailPrimaryColor};font-size:22px;font-weight:700;margin:0 0 16px 0;letter-spacing:-0.02em;">Seu SAAS foi atualizado</h1>
+    <p style="color:#3f3f46;font-size:16px;line-height:1.6;margin:0 0 16px 0;">Olá, seu SAAS ${nome} foi atualizado para a última versão ${ver}.</p>
+    ${blocCorrecoes}
+    ${blocImplementacoes}
+    <p style="color:#3f3f46;font-size:16px;line-height:1.6;margin:24px 0 0 0;">Caso precise de alguma ajuda, entre em contato com o suporte <a href="${LINK_SUPORTE_WHATSAPP}" style="color:${emailPrimaryColor};font-weight:600;text-decoration:none;">clicando AQUI</a>.</p>
+  `;
+  return buildEmailShell(inner);
+}
+
 app.post("/api/email-nova-instalacao", async (req, res) => {
   try {
     const { telefone, dominio } = req.body || {};
@@ -332,7 +366,7 @@ app.get("/api/inserir-anon-key-info", async (req, res) => {
       return res.status(404).json({ error: "Link inválido ou expirado." });
     }
     const row = data;
-    const nome = row.nomeSoftware ?? row.nome_software ?? row.nomesoftware ?? "";
+    const nome = row.nomeSoftware ?? "";
     const dominio = row.dominio ?? "";
     const supabaseUrl = row.supabase_url ?? "";
     res.status(200).json({ nomeSoftware: nome, dominio, supabaseUrl });
@@ -371,7 +405,11 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
     }
     const workflow = await response.json();
 
-    // Nome do arquivo: HUBLABEL-versao-diames (mês com 3 letras), ex: HUBLABEL-5.1.3-01mar
+    // Remover campos do n8n antes de salvar
+    const camposRemover = ["createdAt", "updatedAt", "isArchived", "staticData", "activeVersionId", "versionCounter", "triggerCount", "shared", "activeVersion", "description"];
+    const workflowParaSalvar = JSON.parse(JSON.stringify(workflow));
+    camposRemover.forEach((k) => delete workflowParaSalvar[k]);
+
     const now = new Date();
     const dd = String(now.getDate()).padStart(2, "0");
     const mmm = MESES_3[now.getMonth()];
@@ -380,7 +418,7 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
     const storagePath = `workflows/${fileName}`;
 
     const supabase = getSupabase();
-    const jsonBuffer = Buffer.from(JSON.stringify(workflow, null, 2), "utf8");
+    const jsonBuffer = Buffer.from(JSON.stringify(workflowParaSalvar, null, 2), "utf8");
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(BUCKET_VERSOES)
       .upload(storagePath, jsonBuffer, {
@@ -434,6 +472,86 @@ app.get("/api/n8n/workflow-link", async (req, res) => {
   } catch (err) {
     console.error("Erro ao buscar workflow n8n:", err);
     res.status(500).json({ error: "Falha ao buscar link do n8n." });
+  }
+});
+
+// Extrai bucket e path de uma URL do Supabase Storage (object/public)
+function parseStorageUrlFromLink(url) {
+  if (!url || typeof url !== "string") return null;
+  const match = url.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+  if (!match) return null;
+  const bucket = match[1];
+  const path = decodeURIComponent(match[2]);
+  return bucket && path ? { bucket, path } : null;
+}
+
+// DELETE /api/excluir-atualizacao: remove o arquivo no Storage e o registro da versão
+app.delete("/api/excluir-atualizacao", async (req, res) => {
+  try {
+    const rawId = req.query?.versionId ?? req.body?.versionId;
+    if (rawId === undefined || rawId === null || rawId === "") {
+      return res.status(400).json({ error: "versionId é obrigatório." });
+    }
+    const versionId = Number(rawId);
+    if (!Number.isInteger(versionId) || versionId < 1) {
+      return res.status(400).json({ error: "versionId inválido." });
+    }
+    const supabase = getSupabase();
+    const { data: versao, error: errVersao } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .select("id, linkVersao")
+      .eq("id", versionId)
+      .maybeSingle();
+    if (errVersao) return res.status(500).json({ error: "Erro ao buscar versão." });
+    if (!versao) return res.status(404).json({ error: "Versão não encontrada." });
+    const linkVersao = versao.linkVersao ?? "";
+    const storageRef = parseStorageUrlFromLink(linkVersao);
+    if (storageRef) {
+      await supabase.storage.from(storageRef.bucket).remove([storageRef.path]);
+    }
+    const { error: deleteError } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .delete()
+      .eq("id", versionId);
+    if (deleteError) return res.status(500).json({ error: "Erro ao excluir registro." });
+    res.status(200).json({ success: true, message: "Atualização excluída." });
+  } catch (err) {
+    res.status(500).json({ error: err?.message ?? "Falha ao excluir." });
+  }
+});
+
+// POST alternativo para excluir (caso DELETE não seja suportado por proxy/servidor)
+app.post("/api/excluir-atualizacao", async (req, res) => {
+  try {
+    const rawId = req.body?.versionId ?? req.query?.versionId;
+    if (rawId === undefined || rawId === null || rawId === "") {
+      return res.status(400).json({ error: "versionId é obrigatório." });
+    }
+    const versionId = Number(rawId);
+    if (!Number.isInteger(versionId) || versionId < 1) {
+      return res.status(400).json({ error: "versionId inválido." });
+    }
+    const supabase = getSupabase();
+    const { data: versao, error: errVersao } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .select("id, linkVersao")
+      .eq("id", versionId)
+      .maybeSingle();
+    if (errVersao) return res.status(500).json({ error: "Erro ao buscar versão." });
+    if (!versao) return res.status(404).json({ error: "Versão não encontrada." });
+    const linkVersao = versao.linkVersao ?? "";
+    const storageRef = parseStorageUrlFromLink(linkVersao);
+    if (storageRef) {
+      await supabase.storage.from(storageRef.bucket).remove([storageRef.path]);
+    }
+    const { error: deleteError } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .delete()
+      .eq("id", versionId);
+    if (deleteError) return res.status(500).json({ error: "Erro ao excluir registro." });
+    res.status(200).json({ success: true, message: "Atualização excluída." });
+  } catch (err) {
+    res.status(500).json({ error: err?.message ?? "Falha ao excluir." });
   }
 });
 
@@ -515,6 +633,420 @@ app.post("/api/agendar-email", async (req, res) => {
   } catch (err) {
     console.error("Erro ao agendar email:", err);
     res.status(500).json({ error: "Falha ao agendar." });
+  }
+});
+
+const DISPARAMATOR_URL = "https://app.disparamator.com.br/criar-workflow2";
+const MINUTO_MS = 60 * 1000;
+
+function stripHttps(domain) {
+  if (!domain || typeof domain !== "string") return "";
+  return domain.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "") || "";
+}
+
+function appendVersaoToWorkflowName(workflowData, nomeVersao) {
+  if (!workflowData || typeof workflowData !== "object") return workflowData;
+  const wd = JSON.parse(JSON.stringify(workflowData));
+  if (wd.name && typeof wd.name === "string" && wd.name.trim()) {
+    const v = (nomeVersao || "").trim();
+    if (v) {
+      wd.name = `${wd.name.trim()} - ${v}`;
+    }
+  }
+  return wd;
+}
+
+// POST /api/atualizar-todos: para cada cliente com supabase_anon_key, envia POST ao disparamator, 1 por minuto, e email se sucesso
+app.post("/api/atualizar-todos", async (req, res) => {
+  try {
+    const { versionId } = req.body || {};
+    if (!versionId || typeof versionId !== "string") {
+      return res.status(400).json({ error: "versionId é obrigatório." });
+    }
+    const supabase = getSupabase();
+
+    const { data: versao, error: errVersao } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .select("id, nomeVersao, linkVersao, atualizou_todos")
+      .eq("id", versionId)
+      .maybeSingle();
+    if (errVersao || !versao) {
+      return res.status(404).json({ error: "Versão não encontrada." });
+    }
+    const nomeVersao = versao.nomeVersao ?? "";
+    const linkVersao = versao.linkVersao ?? "";
+    if (!linkVersao.trim()) {
+      return res.status(400).json({ error: "Esta versão não possui link para o workflow (linkVersao vazio)." });
+    }
+    if (versao.atualizou_todos === true) {
+      return res.status(400).json({ error: "O fluxo Atualizar todos já foi executado para esta versão." });
+    }
+
+    // Buscar workflow JSON
+    const wfRes = await fetch(linkVersao);
+    if (!wfRes.ok) {
+      return res.status(502).json({ error: "Falha ao baixar workflow JSON da URL da versão." });
+    }
+    const workflowData = await wfRes.json();
+
+    // Clientes com supabase_anon_key preenchido
+    const { data: clientes, error: errClientes } = await supabase
+      .from("usuarios_SAAS_Agentes")
+      .select(
+        "id, email, nomeSoftware, dominio, corPrincipal, corSecundaria, urlEvolution, apiEvolution, " +
+          "supabase_url, supabase_anon_key, supabase_apikey, urlMinio, n8nUrl, n8nApikey, " +
+          "idCredSupabase, idCredPostgres, idCredMinio, idCredRedis, idCredN8N, idCredAdmin"
+      )
+      .not("supabase_anon_key", "is", null);
+    if (errClientes) {
+      return res.status(500).json({ error: "Erro ao listar clientes." });
+    }
+    const lista = (clientes || []).filter(
+      (c) => c.supabase_anon_key != null && String(c.supabase_anon_key).trim() !== ""
+    );
+
+    if (lista.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Nenhum cliente com anon key preenchido.",
+        total: 0,
+      });
+    }
+
+    const transporter = getTransporter();
+    let sucessos = 0;
+    let erros = 0;
+
+    for (let i = 0; i < lista.length; i++) {
+      const c = lista[i];
+      const config = {
+        softwareName: c.nomeSoftware ?? "",
+        primaryColor: c.corPrincipal ?? "",
+        secondaryColor: c.corSecundaria ?? "",
+        domain: stripHttps(c.dominio),
+        evolutionUrl: c.urlEvolution ?? "",
+        evolutionApikey: c.apiEvolution ?? "",
+        minioUrl: c.urlMinio && String(c.urlMinio).trim() ? c.urlMinio.trim() : "http://minio:9000",
+        supabaseUrl: c.supabase_url ?? "",
+        supabaseAnonKey: c.supabase_anon_key ?? "",
+        supabaseApiKey: c.supabase_apikey ?? "",
+      };
+      const savedIds = {
+        supabase: c.idCredSupabase ?? undefined,
+        postgres: c.idCredPostgres ?? undefined,
+        minio: c.idCredMinio ?? undefined,
+        redis: c.idCredRedis ?? undefined,
+        n8nWebhook: c.idCredN8N ?? undefined,
+        openai: undefined,
+        admin: c.idCredAdmin ?? undefined,
+      };
+      const payload = {
+        workflowData: appendVersaoToWorkflowName(workflowData, nomeVersao),
+        config,
+        savedIds,
+        n8nUrl: c.n8nUrl ?? "",
+        n8nApiKey: c.n8nApikey ?? "",
+        versao: nomeVersao,
+      };
+
+      let statusAtualizacao = "erro";
+      let msgAtualizacao = "";
+      let respostaAtualizacao = "";
+      try {
+        const res2 = await fetch(DISPARAMATOR_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        respostaAtualizacao = (await res2.text()).slice(0, 2000);
+        if (res2.ok) {
+          let isErro = false;
+          try {
+            const body = JSON.parse(respostaAtualizacao);
+            if (body && (body.error || (body.success === false))) {
+              isErro = true;
+              msgAtualizacao = body.error ?? body.message ?? JSON.stringify(body);
+            }
+          } catch (_) {}
+          if (isErro) {
+            statusAtualizacao = "erro";
+            erros++;
+          } else {
+            statusAtualizacao = "sucesso";
+            sucessos++;
+          }
+        } else {
+          msgAtualizacao = `HTTP ${res2.status}: ${respostaAtualizacao.slice(0, 500)}`;
+          erros++;
+        }
+      } catch (e) {
+        msgAtualizacao = e?.message ?? String(e);
+        erros++;
+      }
+
+      let logRow = null;
+      const payloadLog = {
+        versao_id: versionId,
+        cliente_id: c.id,
+        status_atualizacao: statusAtualizacao,
+        mensagem_atualizacao: msgAtualizacao || null,
+        resposta_atualizacao: respostaAtualizacao || null,
+        status_email: "pendente",
+        mensagem_email: null,
+      };
+      let { data: logData, error: errLog } = await supabase
+        .from("atualizacao_todos_logs")
+        .insert(payloadLog)
+        .select("id")
+        .single();
+      if (errLog) {
+        console.error("Erro ao inserir log (com resposta_atualizacao):", errLog);
+        delete payloadLog.resposta_atualizacao;
+        const retry = await supabase
+          .from("atualizacao_todos_logs")
+          .insert(payloadLog)
+          .select("id")
+          .single();
+        if (retry.error) {
+          console.error("Erro ao inserir log (retry sem resposta_atualizacao):", retry.error);
+        } else {
+          logRow = retry.data;
+        }
+      } else {
+        logRow = logData;
+      }
+
+      let statusEmail = "pendente";
+      let msgEmail = null;
+      if (statusAtualizacao === "sucesso") {
+        try {
+          const correcoes = versao.correcoes ?? "";
+          const implementacoes = versao.implementacoes ?? "";
+          const nomeSoft = c.nomeSoftware ?? "HubLabel";
+          const html = buildEmailAtualizado(nomeSoft, nomeVersao, correcoes, implementacoes);
+          await transporter.sendMail({
+            from: `"${fromName}" <${fromAddress}>`,
+            to: c.email,
+            subject: `${nomeSoft} Atualizado ${nomeVersao}`,
+            text: `Olá, seu SAAS ${nomeSoft} foi atualizado para a última versão ${nomeVersao}.`,
+            html,
+          });
+          statusEmail = "sucesso";
+        } catch (e) {
+          statusEmail = "erro";
+          msgEmail = e?.message ?? String(e);
+        }
+        if (logRow?.id) {
+          await supabase
+            .from("atualizacao_todos_logs")
+            .update({ status_email: statusEmail, mensagem_email: msgEmail })
+            .eq("id", logRow.id);
+        }
+      }
+
+      // Aguardar 1 minuto antes do próximo
+      if (i < lista.length - 1) {
+        await new Promise((r) => setTimeout(r, MINUTO_MS));
+      }
+    }
+
+    await supabase
+      .from("versoes_SAAS_Agentes")
+      .update({ atualizou_todos: true })
+      .eq("id", versionId);
+
+    res.status(200).json({
+      success: true,
+      message: `Processado ${lista.length} cliente(s): ${sucessos} sucesso(s), ${erros} erro(s).`,
+      total: lista.length,
+      sucessos,
+      erros,
+    });
+  } catch (err) {
+    console.error("Erro em atualizar-todos:", err);
+    res.status(500).json({ error: err?.message ?? "Falha ao executar Atualizar todos." });
+  }
+});
+
+// POST /api/atualizar-cliente: responde imediato e processa em background (disparamator + log + email)
+app.post("/api/atualizar-cliente", async (req, res) => {
+  try {
+    const { clientId, versionId } = req.body || {};
+    if (!clientId || typeof clientId !== "string") {
+      return res.status(400).json({ error: "clientId é obrigatório." });
+    }
+    if (!versionId || (typeof versionId !== "string" && typeof versionId !== "number")) {
+      return res.status(400).json({ error: "versionId é obrigatório." });
+    }
+    const supabase = getSupabase();
+
+    const { data: versao, error: errVersao } = await supabase
+      .from("versoes_SAAS_Agentes")
+      .select("*")
+      .eq("id", versionId)
+      .maybeSingle();
+    if (errVersao) {
+      return res.status(500).json({ error: errVersao.message || "Erro ao buscar versão." });
+    }
+    if (!versao) {
+      return res.status(404).json({ error: "Versão não encontrada." });
+    }
+    const nomeVersao = versao.nomeVersao ?? "";
+    const linkVersao = versao.linkVersao ?? "";
+    if (!linkVersao.trim()) {
+      return res.status(400).json({ error: "Esta versão não possui link para o workflow (linkVersao vazio)." });
+    }
+
+    const { data: c, error: errCliente } = await supabase
+      .from("usuarios_SAAS_Agentes")
+      .select(
+        "id, email, nomeSoftware, dominio, corPrincipal, corSecundaria, urlEvolution, apiEvolution, " +
+          "supabase_url, supabase_anon_key, supabase_apikey, urlMinio, n8nUrl, n8nApikey, " +
+          "idCredSupabase, idCredPostgres, idCredMinio, idCredRedis, idCredN8N, idCredAdmin"
+      )
+      .eq("id", clientId)
+      .maybeSingle();
+    if (errCliente || !c) {
+      return res.status(404).json({ error: "Cliente não encontrado." });
+    }
+    if (!c.supabase_anon_key || String(c.supabase_anon_key).trim() === "") {
+      return res.status(400).json({ error: "Cliente não possui anon key preenchida." });
+    }
+
+    res.status(202).json({
+      success: true,
+      message: "Atualização em processamento. O resultado será registrado nos logs.",
+    });
+
+    // Processar em background (não aguardar resposta do cliente)
+    (async () => {
+      try {
+        const wfRes = await fetch(linkVersao);
+        if (!wfRes.ok) {
+          throw new Error("Falha ao baixar workflow JSON.");
+        }
+        const workflowData = await wfRes.json();
+
+        const config = {
+          softwareName: c.nomeSoftware ?? "",
+          primaryColor: c.corPrincipal ?? "",
+          secondaryColor: c.corSecundaria ?? "",
+          domain: stripHttps(c.dominio),
+          evolutionUrl: c.urlEvolution ?? "",
+          evolutionApikey: c.apiEvolution ?? "",
+          minioUrl: c.urlMinio && String(c.urlMinio).trim() ? c.urlMinio.trim() : "http://minio:9000",
+          supabaseUrl: c.supabase_url ?? "",
+          supabaseAnonKey: c.supabase_anon_key ?? "",
+          supabaseApiKey: c.supabase_apikey ?? "",
+        };
+        const savedIds = {
+          supabase: c.idCredSupabase ?? undefined,
+          postgres: c.idCredPostgres ?? undefined,
+          minio: c.idCredMinio ?? undefined,
+          redis: c.idCredRedis ?? undefined,
+          n8nWebhook: c.idCredN8N ?? undefined,
+          openai: undefined,
+          admin: c.idCredAdmin ?? undefined,
+        };
+        const payload = {
+          workflowData: appendVersaoToWorkflowName(workflowData, nomeVersao),
+          config,
+          savedIds,
+          n8nUrl: c.n8nUrl ?? "",
+          n8nApiKey: c.n8nApikey ?? "",
+          versao: nomeVersao,
+        };
+
+        let statusAtualizacao = "erro";
+        let msgAtualizacao = "";
+        let respostaAtualizacao = "";
+        try {
+          const res2 = await fetch(DISPARAMATOR_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          respostaAtualizacao = (await res2.text()).slice(0, 2000);
+          if (res2.ok) {
+            let isErro = false;
+            try {
+              const body = JSON.parse(respostaAtualizacao);
+              if (body && (body.error || (body.success === false))) {
+                isErro = true;
+                msgAtualizacao = body.error ?? body.message ?? JSON.stringify(body);
+              }
+            } catch (_) {}
+            statusAtualizacao = isErro ? "erro" : "sucesso";
+          } else {
+            msgAtualizacao = `HTTP ${res2.status}: ${respostaAtualizacao.slice(0, 500)}`;
+          }
+        } catch (e) {
+          msgAtualizacao = e?.message ?? String(e);
+        }
+
+        let logRow = null;
+        const payloadLog = {
+          versao_id: versao.id,
+          cliente_id: c.id,
+          status_atualizacao: statusAtualizacao,
+          mensagem_atualizacao: msgAtualizacao || null,
+          resposta_atualizacao: respostaAtualizacao || null,
+          status_email: "pendente",
+          mensagem_email: null,
+        };
+        let { data: logData, error: errLog } = await supabase
+          .from("atualizacao_todos_logs")
+          .insert(payloadLog)
+          .select("id")
+          .single();
+        if (errLog) {
+          console.error("atualizar-cliente background: erro ao inserir log:", errLog);
+          delete payloadLog.resposta_atualizacao;
+          const retry = await supabase
+            .from("atualizacao_todos_logs")
+            .insert(payloadLog)
+            .select("id")
+            .single();
+          if (!retry.error) logRow = retry.data;
+        } else {
+          logRow = logData;
+        }
+
+        let statusEmail = "pendente";
+        let msgEmail = null;
+        if (statusAtualizacao === "sucesso") {
+          const transporter = getTransporter();
+          try {
+            const correcoes = versao.correcoes ?? "";
+            const implementacoes = versao.implementacoes ?? "";
+            const nomeSoft = c.nomeSoftware ?? "HubLabel";
+            const html = buildEmailAtualizado(nomeSoft, nomeVersao, correcoes, implementacoes);
+            await transporter.sendMail({
+              from: `"${fromName}" <${fromAddress}>`,
+              to: c.email,
+              subject: `${nomeSoft} Atualizado ${nomeVersao}`,
+              text: `Olá, seu SAAS ${nomeSoft} foi atualizado para a última versão ${nomeVersao}.`,
+              html,
+            });
+            statusEmail = "sucesso";
+          } catch (e) {
+            statusEmail = "erro";
+            msgEmail = e?.message ?? String(e);
+          }
+          if (logRow?.id) {
+            await supabase
+              .from("atualizacao_todos_logs")
+              .update({ status_email: statusEmail, mensagem_email: msgEmail })
+              .eq("id", logRow.id);
+          }
+        }
+      } catch (err) {
+        console.error("atualizar-cliente background:", err);
+      }
+    })();
+  } catch (err) {
+    console.error("Erro em atualizar-cliente:", err);
+    res.status(500).json({ error: err?.message ?? "Falha ao atualizar cliente." });
   }
 });
 

@@ -9,6 +9,7 @@ import {
   X,
   DollarSign,
   Settings,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/admin/atualizacoes", icon: Package, label: "Atualizações" },
   { to: "/admin/instalacoes", icon: Settings, label: "Instalações" },
   { to: "/admin/vendas", icon: DollarSign, label: "Vendas" },
+  { to: "/admin/logs-atualizacao", icon: FileText, label: "Logs" },
 ];
 
 export function Sidebar() {

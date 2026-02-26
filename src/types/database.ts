@@ -20,6 +20,14 @@ export interface UsuarioSAASAgente {
   anon_key_token?: string;
   senha?: string;
   n8nUrl?: string;
+  n8nApikey?: string;
+  urlMinio?: string;
+  idCredSupabase?: string;
+  idCredPostgres?: string;
+  idCredMinio?: string;
+  idCredRedis?: string;
+  idCredN8N?: string;
+  idCredAdmin?: string;
   [key: string]: unknown;
 }
 
@@ -66,6 +74,24 @@ export interface VersaoSAASAgente {
   url_imagem?: string;
   correcoes?: string;
   implementacoes?: string;
+  created_at?: string;
+  /** Se true, o fluxo Atualizar todos já foi executado para esta versão. */
+  atualizou_todos?: boolean;
+}
+
+export type StatusAtualizacaoLog = "sucesso" | "erro";
+export type StatusEmailLog = "pendente" | "sucesso" | "erro";
+
+export interface AtualizacaoTodoLog {
+  id: string;
+  versao_id: number;
+  cliente_id: string;
+  status_atualizacao: StatusAtualizacaoLog;
+  mensagem_atualizacao?: string | null;
+  /** Corpo da resposta da requisição POST criar-workflow2. */
+  resposta_atualizacao?: string | null;
+  status_email: StatusEmailLog;
+  mensagem_email?: string | null;
   created_at?: string;
 }
 
