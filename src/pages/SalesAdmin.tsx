@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, MoreVertical, Pencil, RotateCcw, Wallet, CheckCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { format, startOfDay, startOfMonth, endOfMonth, subDays } from "date-fns";
+import { format, startOfDay, startOfMonth, endOfMonth, subDays, addDays, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   BarChart,
@@ -283,12 +283,19 @@ export function SalesAdmin() {
     acc[key] = (acc[key] ?? 0) + Number(v.valor);
     return acc;
   }, {});
-  const chartData = Object.entries(porDia)
-    .map(([date, total]) => ({
-      date: format(parseDateOnly(date), "dd/MM", { locale: ptBR }),
-      total,
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const fromDate = parseDateOnly(filterFrom);
+  const toDate = parseDateOnly(filterTo);
+  const diasNoRange = isNaN(fromDate.getTime()) || isNaN(toDate.getTime())
+    ? 0
+    : Math.max(0, differenceInDays(toDate, fromDate) + 1);
+  const chartData = Array.from({ length: diasNoRange }, (_, i) => {
+    const d = addDays(fromDate, i);
+    const key = format(d, "yyyy-MM-dd");
+    return {
+      date: format(d, "dd/MM", { locale: ptBR }),
+      total: porDia[key] ?? 0,
+    };
+  });
 
   const porVendedor = vendasFiltradas.reduce<Record<string, number>>((acc, v) => {
     const nome = v.vendedor?.trim() || "Sem nome";

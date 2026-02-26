@@ -31,7 +31,7 @@ export function ClientAdmin() {
         const term = `%${searchTerm.trim()}%`;
         query = query.or(`nomeSoftware.ilike.${term},email.ilike.${term},dominio.ilike.${term}`);
       }
-      const { data, error } = await query.order("nomeSoftware");
+      const { data, error } = await query.order("created_at", { ascending: false });
       if (error) throw error;
       setClients((data as UsuarioSAASAgente[]) ?? []);
     } catch (err) {
