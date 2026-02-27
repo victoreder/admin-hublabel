@@ -160,7 +160,7 @@ export function SalesAdmin() {
 
   const vendasAtivas = vendas.filter((v) => v.status !== "reembolsada");
 
-  const vendasFiltradas = vendasAtivas.filter((v) => {
+  const filtroPorData = (v: Venda) => {
     const key = v.data_venda
       ? String(v.data_venda).split("T")[0]
       : v.created_at
@@ -168,17 +168,20 @@ export function SalesAdmin() {
         : "";
     if (!key) return false;
     return key >= filterFrom && key <= filterTo;
-  });
+  };
+
+  const vendasFiltradas = vendasAtivas.filter(filtroPorData);
+  const vendasFiltradasParaTabela = vendas.filter(filtroPorData);
 
   const ITENS_POR_PAGINA = 10;
   const [paginaLista, setPaginaLista] = useState(1);
-  const totalPaginas = Math.max(1, Math.ceil(vendasFiltradas.length / ITENS_POR_PAGINA));
-  const vendasPaginadas = vendasFiltradas.slice(
+  const totalPaginas = Math.max(1, Math.ceil(vendasFiltradasParaTabela.length / ITENS_POR_PAGINA));
+  const vendasPaginadas = vendasFiltradasParaTabela.slice(
     (paginaLista - 1) * ITENS_POR_PAGINA,
     paginaLista * ITENS_POR_PAGINA
   );
-  const inicioItem = vendasFiltradas.length === 0 ? 0 : (paginaLista - 1) * ITENS_POR_PAGINA + 1;
-  const fimItem = Math.min(paginaLista * ITENS_POR_PAGINA, vendasFiltradas.length);
+  const inicioItem = vendasFiltradasParaTabela.length === 0 ? 0 : (paginaLista - 1) * ITENS_POR_PAGINA + 1;
+  const fimItem = Math.min(paginaLista * ITENS_POR_PAGINA, vendasFiltradasParaTabela.length);
 
   const faturamentoLiquido = (valor: number, percentual: number) =>
     valor * (1 - percentual / 100);
@@ -734,10 +737,10 @@ export function SalesAdmin() {
                   })}
                 </TableBody>
               </Table>
-              {vendasFiltradas.length > ITENS_POR_PAGINA && (
+              {vendasFiltradasParaTabela.length > ITENS_POR_PAGINA && (
                 <div className="flex items-center justify-between gap-4 mt-4 pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    Mostrando {inicioItem}-{fimItem} de {vendasFiltradas.length}
+                    Mostrando {inicioItem}-{fimItem} de {vendasFiltradasParaTabela.length}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
